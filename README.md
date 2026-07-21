@@ -11,6 +11,8 @@
   <a href="https://shfonic.com">shfonic.com</a>
   &nbsp;·&nbsp;
   <a href="https://shfonic.com/dash/">Product page</a>
+  &nbsp;·&nbsp;
+  <a href="https://buymeacoffee.com/shfonic">Buy me a coffee ☕</a>
 </p>
 
 # Shfonic Dash
@@ -224,6 +226,12 @@ examples).
 
 ## Changelog
 See [CHANGELOG.md](CHANGELOG.md) for a history of features and fixes.
+
+## Support
+Shfonic Dash is free and open source. If it earns a spot in your cockpit, you can
+support development:
+
+<a href="https://buymeacoffee.com/shfonic"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="46"></a>
 
 ## License
 GPL-3.0 — see [LICENSE](LICENSE).
