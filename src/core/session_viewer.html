@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Session Lines · Shfonic Dash</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='3' y='7' width='18' height='11' rx='5.5' fill='none' stroke='%23ffb300' stroke-width='2.6'/><circle cx='12' cy='7' r='2.2' fill='%23ffb300'/></svg>" />
+<style>
+  /* Shared visual language with track_viewer.html (the map editor) — same
+     theme variables, same host bridge, same pan/zoom feel. This is the
+     read-only companion: it overlays a session's driven laps on the racing
+     line and lets you toggle laps and zoom into a corner. */
+  :root {
+    --bg: #0a0d12; --panel: #10151d; --panel2: #161c26; --line: #232b38;
+    --line2: #313b4b; --text: #e7edf5; --muted: #8b95a6; --dim: #5b6576;
+    --accent: #ffb300;
+    --left: #5a96f5; --right: #f5963f; --ideal: #58d980;
+    --sf: #ffffff; --sector: #e6cf46; --surface: rgba(120,140,170,0.10);
+    --best: #ff5db1; --flashback: #59a9ff; --danger: #ff5b5b; --contact: #f5963f;
+    --hud-bg: rgba(10,13,18,0.72);
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --fscale: 1;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f6f9; --panel: #ffffff; --panel2: #eceff4; --line: #d6dbe2;
+    --line2: #c2cad4; --text: #171c23; --muted: #566171; --dim: #8a92a0;
+    --accent: #b07800;
+    --left: #2e6fd4; --right: #cf6a17; --ideal: #2f9e57;
+    --sf: #3a4048; --sector: #9a8500; --surface: rgba(40,70,110,0.08);
+    --best: #c0267e; --flashback: #1f6fd0; --danger: #d63a3a; --contact: #cf6a17;
+    --hud-bg: rgba(255,255,255,0.9);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); -webkit-font-smoothing: antialiased;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  .wrap { display: grid; grid-template-columns: 1fr 320px;
+    grid-template-rows: auto 1fr; height: 100vh; gap: 1px; background: var(--line); }
+  header { grid-column: 1 / -1; background: var(--panel); padding: 12px 20px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand .lock { display: flex; flex-direction: column; line-height: 1.2; }
+  .brand .wm { font-family: var(--mono); font-size: calc(13px * var(--fscale));
+    letter-spacing: .24em; font-weight: 700; color: var(--text); }
+  .brand .wm b { color: var(--accent); font-weight: 700; }
+  .brand .sub { font-family: var(--mono); font-size: calc(9px * var(--fscale));
+    letter-spacing: .18em; text-transform: uppercase; color: var(--dim); }
+  .track-id { display: flex; align-items: baseline; gap: 9px; padding-left: 16px;
+    border-left: 1px solid var(--line2); }
+  .track-id .tlabel { font-family: var(--mono); font-size: calc(10px * var(--fscale));
+    letter-spacing: .16em; color: var(--dim); }
+  .track-id .t { font-family: var(--mono); font-size: calc(15px * var(--fscale));
+    letter-spacing: .05em; color: var(--accent); font-weight: 600; text-transform: uppercase; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+  .chip { font-family: var(--mono); font-size: calc(11px * var(--fscale));
+    letter-spacing: .06em; color: var(--muted); background: var(--panel2);
+    border: 1px solid var(--line); padding: 4px 9px; border-radius: 5px;
+    font-variant-numeric: tabular-nums; }
+  .chip b { color: var(--text); font-weight: 600; }
+  .stage { background: var(--bg); position: relative; overflow: hidden; }
+  svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  svg.grabbing { cursor: grabbing; }
+  .mapctl { position: absolute; top: 12px; right: 12px; display: flex;
+    flex-direction: column; gap: 6px; }
+  .mapctl button { width: 34px; height: 34px; padding: 0; font-size: calc(19px * var(--fscale));
+    line-height: 1; display: flex; align-items: center; justify-content: center;
+    background: rgba(16,21,29,.88); border: 1px solid var(--line2); color: var(--text);
+    border-radius: 7px; cursor: pointer; }
+  .mapctl button:hover { border-color: var(--accent); color: var(--accent); }
+  .hud { position: absolute; left: 14px; bottom: 12px; max-width: calc(100% - 28px);
+    font-family: var(--mono); font-size: calc(11px * var(--fscale)); color: var(--muted);
+    background: var(--hud-bg); border: 1px solid var(--line); border-radius: 5px;
+    padding: 6px 9px; font-variant-numeric: tabular-nums; pointer-events: none; }
+  .empty { position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; }
+  .empty[hidden] { display: none; }
+  .empty .card { text-align: center; max-width: 340px; padding: 20px; }
+  .empty h2 { font-family: var(--mono); font-size: calc(14px * var(--fscale));
+    letter-spacing: .14em; text-transform: uppercase; color: var(--text); margin: 0 0 8px; }
+  .empty p { color: var(--muted); font-size: calc(13px * var(--fscale));
+    line-height: 1.6; margin: 0 0 18px; }
+  aside { background: var(--panel); padding: 16px; overflow-y: auto; display: flex;
+    flex-direction: column; gap: 18px; }
+  .grp-title { font-family: var(--mono); font-size: calc(11px * var(--fscale));
+    letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin: 0 0 10px; }
+  .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  button { font-family: var(--sans); font-size: 12.5px; color: var(--text);
+    background: var(--panel2); border: 1px solid var(--line2); border-radius: 6px;
+    padding: 6px 10px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .laps { list-style: none; margin: 0; padding: 0; display: flex;
+    flex-direction: column; gap: 6px; }
+  .lap { display: flex; align-items: center; gap: 9px; background: var(--panel2);
+    border: 1px solid var(--line); border-left-width: 3px; border-radius: 5px;
+    padding: 7px 9px; font-size: calc(13px * var(--fscale)); cursor: pointer; }
+  .lap:hover { border-color: var(--line2); }
+  .lap.off { opacity: .5; }
+  .lap .sw { width: 14px; height: 3px; border-radius: 2px; flex: none; }
+  .lap .num { font-weight: 600; flex: none; min-width: 46px; }
+  .lap .num .star { color: var(--accent); }
+  .lap .time { font-family: var(--mono); font-variant-numeric: tabular-nums;
+    color: var(--muted); margin-left: auto; }
+  .lap .badge { font-family: var(--mono); font-size: calc(9px * var(--fscale));
+    letter-spacing: .06em; text-transform: uppercase; color: var(--right);
+    border: 1px solid var(--right); border-radius: 4px; padding: 1px 5px; flex: none; }
+  .lap { flex-wrap: wrap; }
+  /* Sector times — a second line inside the lap row, shown only when there is
+     room (wide screens / iPad). A sector that holds the session's best time for
+     its number is the theoretical-best sector: highlighted magenta. */
+  .lap .sectors { display: none; width: 100%; gap: 6px; margin-top: 5px;
+    font-family: var(--mono); font-size: calc(11px * var(--fscale));
+    font-variant-numeric: tabular-nums; }
+  body.wide .lap .sectors { display: flex; }
+  .lap .sec { flex: 1; display: flex; gap: 5px; align-items: baseline;
+    color: var(--muted); }
+  .lap .sec .lab { color: var(--dim); font-size: calc(9px * var(--fscale));
+    letter-spacing: .06em; }
+  .lap .sec.best { color: var(--best); font-weight: 600; }
+  .layers { display: flex; flex-direction: column; gap: 7px; }
+  .layer { display: flex; align-items: center; gap: 9px; font-size: calc(13px * var(--fscale));
+    cursor: pointer; user-select: none; }
+  .layer input { accent-color: var(--accent); width: 15px; height: 15px; }
+  .swline { width: 16px; height: 3px; border-radius: 2px; flex: none; }
+  .none { color: var(--dim); font-size: 12.5px; font-style: italic; }
+  .hint { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+  .hint .glyph { font-family: var(--mono); font-weight: 700; }
+  .divider { height: 1px; background: var(--line); }
+  .file-lbl { display: inline-flex; }
+  /* Embedded in the companion app: the native host owns the title bar and bakes
+     the data in, so the standalone file-open controls, the brand lock-up and the
+     on-map zoom buttons are redundant — hiding them hands the height back to the
+     map (the app drives zoom by pinch / tap). */
+  body.embedded #openrow { display: none; }
+  body.embedded .brand { display: none; }
+  body.embedded header { padding: 8px 16px; }
+  body.embedded #mapctl { display: none; }
+  @media (max-width: 760px) {
+    .wrap { grid-template-columns: 1fr; grid-template-rows: auto 60vh auto; }
+    aside { max-height: 40vh; }
+  }
+  /* Wide screens (iPad, desktop): give the lap list room for sector columns. */
+  @media (min-width: 820px) {
+    .wrap { grid-template-columns: 1fr 380px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <svg class="mark" width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3" y="7" width="18" height="11" rx="5.5" fill="none" stroke="var(--accent)" stroke-width="2.6"/>
+        <circle cx="12" cy="7" r="2.2" fill="var(--accent)"/></svg>
+      <div class="lock">
+        <span class="wm">SHFONIC <b>DASH</b></span>
+        <span class="sub">Session Lines</span>
+      </div>
+    </div>
+    <div class="track-id">
+      <span class="tlabel">TRACK</span>
+      <span class="t" id="trackName">—</span>
+    </div>
+    <div class="chips" id="chips"></div>
+  </header>
+
+  <div class="stage">
+    <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="mapctl" id="mapctl" hidden>
+      <button id="zin"  title="Zoom in">+</button>
+      <button id="zout" title="Zoom out">−</button>
+      <button id="zfit" title="Fit to view">⤢</button>
+    </div>
+    <div class="hud" id="hud" hidden></div>
+    <div class="empty" id="empty">
+      <div class="card">
+        <h2>No session loaded</h2>
+        <p>Open a driven session to compare its laps against the racing line.
+           Pinch or scroll to zoom; tap a marker to see the incident.</p>
+        <div id="openrow" class="btns" style="justify-content:center">
+          <label class="file-lbl"><button id="openTrack" type="button">Open track JSON…</button>
+            <input id="trackFile" type="file" accept=".json,application/json" hidden></label>
+          <label class="file-lbl"><button id="openCsv" type="button">Open session CSV…</button>
+            <input id="csvFile" type="file" accept=".csv,text/csv" hidden></label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside>
+    <div>
+      <p class="grp-title">Laps</p>
+      <div class="btns" id="lapBtns">
+        <button id="showBest" type="button">Best only</button>
+        <button id="showValid" type="button">Valid only</button>
+        <button id="showTheo" type="button" title="Laps that own a theoretical-best sector">Theo best</button>
+        <button id="showAll" type="button">All</button>
+        <button id="showNone" type="button">None</button>
+      </div>
+      <ul class="laps" id="lapList"><li class="none">No laps loaded.</li></ul>
+    </div>
+    <div class="divider"></div>
+    <div>
+      <p class="grp-title">Layers</p>
+      <div class="layers" id="layers"></div>
+    </div>
+    <div class="divider"></div>
+    <p class="hint">The racing line is the recorded ideal line for this car class.
+      Each coloured line is a lap you drove. Pinch or scroll to zoom, double-tap
+      to fit; tap an incident marker to see its lap and type.</p>
+    <p class="hint" id="eventKey" hidden>Incidents on the map:
+      <span class="glyph" style="color:var(--danger)">✕</span> track limits ·
+      <span class="glyph" style="color:var(--contact)">◆</span> contact ·
+      <span class="glyph" style="color:var(--flashback)">▲</span> flashback</p>
+  </aside>
+</div>
+
+<script>
+"use strict";
+const SVGNS = "http://www.w3.org/2000/svg";
+const svg = document.getElementById("map");
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// World is X/Z metres. Flip X so the lap runs clockwise (real driving
+// direction) and negate Z so north is up in SVG — identical to the map editor.
+const sx = x => -x;
+const sy = z => -z;
+
+// Cosmetic display rotation (degrees), from the track's `orientation` field —
+// set once when the track loads. Realised as an SVG rotate() on the scene group
+// (see applyTransform), so the tap/hit-test maths, which works in the scene
+// group's own child space, is untouched; only computeVB rotates the projected
+// points to re-frame the bounds. Identical to the map editor.
+let ORI = 0;
+function rotXY(X, Y) {
+  if (!ORI) return [X, Y];
+  const r = ORI * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+  return [X * c - Y * s, X * s + Y * c];
+}
+
+// ---- state ----
+let DATA = null;          // {track, car_class, session, laps, best_num}
+let TRACK = null;         // the track map, with .racing_line set to the class line
+let NORMALS = [];         // right-hand unit normals of the racing line
+let LAPS = [];            // [{num, time, invalid, s1..s3, offsets(m), color, driven, on, best, ownsTheo}]
+let EVENTS = [];          // [{distance, kind, lap_num, laps}] incident markers
+let selectedEvent = null; // the tapped marker (tooltip + highlight persist)
+let THEO = { s1: null, s2: null, s3: null };   // best sector times + owning lap
+let VB = { w: 1, h: 1 };
+let pz = { k: 1, tx: 0, ty: 0 };
+let sceneG = null;
+
+// Driven laps get vivid categorical colours; the ideal line stays green
+// (--ideal) so the reference is always the same hue you know from the editor.
+const LAP_COLORS = ["#ffb300","#59d3e6","#a78bfa","#ff5db1","#f5963f",
+                    "#ff8080","#7ec8ff","#ffd24a","#c9a0ff","#ff9ecb"];
+
+const LAYERS = [
+  { key: "ideal",   label: "Racing line", css: "--ideal", on: true },
+  { key: "edges",   label: "Track edges", css: "--left",  on: true },
+  { key: "sections",label: "Corner labels", css: "--accent", on: true },
+  { key: "sectors", label: "Sector markers", css: "--sector", on: false },
+  { key: "events",  label: "Incidents", css: "--danger", on: true },
+  { key: "sf",      label: "Start / finish", css: "--sf", on: true },
+];
+const vis = Object.fromEntries(LAYERS.map(l => [l.key, l.on]));
+
+// ---- geometry ----
+function total() { return (TRACK && TRACK.game_track_length_m) || 1; }
+function allPoints(t) {
+  return [...(t.left_edge||[]), ...(t.right_edge||[]), ...(t.racing_line||[]),
+          ...LAPS.filter(l => l.driven).flatMap(l => l.driven)];
+}
+function computeVB(t) {
+  const pts = allPoints(t);
+  if (!pts.length) { VB = { w: 1, h: 1 }; return; }
+  // Frame the *rotated* projection (the scene group applies the same rotate).
+  const P = pts.map(p => rotXY(sx(p[0]), sy(p[1])));
+  const X = P.map(q => q[0]), Y = P.map(q => q[1]);
+  const minx = Math.min(...X), maxx = Math.max(...X);
+  const miny = Math.min(...Y), maxy = Math.max(...Y);
+  const pad = 40;
+  VB = { w: maxx - minx, h: maxy - miny };
+  svg.setAttribute("viewBox", `${minx-pad} ${miny-pad} ${VB.w+2*pad} ${VB.h+2*pad}`);
+}
+function posAtDistance(line, d, tot) {
+  if (!line || !line.length) return null;
+  const f = tot > 0 ? clamp(d/tot, 0, 1) : 0;
+  const idx = f * (line.length - 1);
+  const i = Math.floor(idx), t = idx - i;
+  const a = line[i], b = line[Math.min(i+1, line.length-1)];
+  return [a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t];
+}
+function pathFrom(pts) {
+  return pts.map((p,i) => `${i?'L':'M'}${sx(p[0]).toFixed(1)},${sy(p[1]).toFixed(1)}`).join(" ");
+}
+// A smooth path through the points — a Catmull-Rom spline emitted as cubic
+// béziers, so the racing/driven lines read as smooth curves when you zoom in
+// instead of showing the straight-segment facets of the ~15 m station spacing.
+// `closed` wraps the ends (full-lap loops: racing line, edges, driven laps);
+// open paths (section arcs, pit) clamp the end tangents. Coordinates are
+// projected through sx/sy exactly like pathFrom.
+function smoothPath(pts, closed) {
+  const n = pts.length;
+  if (n < 3) return pathFrom(pts);
+  const X = pts.map(p => sx(p[0])), Y = pts.map(p => sy(p[1]));
+  const at = i => closed ? ((i % n) + n) % n : Math.max(0, Math.min(n - 1, i));
+  let d = `M${X[0].toFixed(1)},${Y[0].toFixed(1)}`;
+  const last = closed ? n : n - 1;
+  for (let i = 0; i < last; i++) {
+    const i0 = at(i - 1), i1 = at(i), i2 = at(i + 1), i3 = at(i + 2);
+    const c1x = X[i1] + (X[i2] - X[i0]) / 6, c1y = Y[i1] + (Y[i2] - Y[i0]) / 6;
+    const c2x = X[i2] - (X[i3] - X[i1]) / 6, c2y = Y[i2] - (Y[i3] - Y[i1]) / 6;
+    d += `C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ` +
+         `${X[i2].toFixed(1)},${Y[i2].toFixed(1)}`;
+  }
+  return d + (closed ? "Z" : "");
+}
+function cssv(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
+// Unit right-hand normal (tangent rotated −90°, matching core.geometry /
+// sessionlog.lines._right_normals) at each vertex of the closed racing line, so
+// racing[i] + offset·normal[i] rebuilds the driven point on the side it was
+// captured. Ported verbatim so the browser draws the same line as the Pi.
+function rightNormals(line) {
+  const n = line.length, out = [];
+  for (let i = 0; i < n; i++) {
+    const a = line[(i - 1 + n) % n], b = line[(i + 1) % n];
+    const tx = b[0] - a[0], tz = b[1] - a[1];
+    const mag = Math.hypot(tx, tz) || 1;
+    out.push([tz / mag, -tx / mag]);
+  }
+  return out;
+}
+function drivenLine(offsets) {
+  const racing = TRACK.racing_line;
+  const n = Math.min(racing.length, offsets.length);
+  const out = [];
+  for (let i = 0; i < n; i++)
+    out.push([racing[i][0] + offsets[i] * NORMALS[i][0],
+              racing[i][1] + offsets[i] * NORMALS[i][1]]);
+  return out;
+}
+
+// A section is a forward arc start_m→end_m in driving order; d0>d1 wraps S/F.
+function inSpan(d, d0, d1, tot) { return d0 <= d1 ? (d>=d0 && d<=d1) : (d>=d0 || d<=d1); }
+function spanPoints(line, d0, d1, tot) {
+  const n = line.length;
+  const i0 = Math.max(0, Math.round(d0/tot*(n-1)));
+  const i1 = Math.min(n-1, Math.round(d1/tot*(n-1)));
+  if (d0 <= d1) return line.slice(i0, i1+1);
+  return [...line.slice(i0), ...line.slice(0, i1+1)];
+}
+function spanMid(d0, d1, tot) {
+  const len = d0 <= d1 ? d1 - d0 : (tot - d0) + d1;
+  return d0 <= d1 ? (d0 + d1) / 2 : (d0 + len / 2) % tot;
+}
+function sectionLabel(m) { return m.name || (m.turn != null && m.turn !== "" ? "T" + m.turn : (m.type || "?")); }
+function sections() { return (TRACK && Array.isArray(TRACK.sections)) ? TRACK.sections : []; }
+// The named corner/section a lap distance falls in — for the tap read-out.
+function locateSection(d) {
+  const tot = total();
+  const cand = sections().filter(s => Number.isFinite(s.start_m) && Number.isFinite(s.end_m)
+    && inSpan(d, s.start_m, s.end_m, tot));
+  const rank = t => ({corner:0, chicane:0, complex:1, straight:2, drs:2}[t] ?? 3);
+  cand.sort((a,b) => rank(a.type) - rank(b.type));
+  return cand[0] || null;
+}
+function sectorRegions(t) {
+  const bs = (t.sectors||[]).map(s => s.lap_dist_m).filter(v => v>0).sort((a,b)=>a-b);
+  const edges = [0, ...bs, total()];
+  const out = [];
+  for (let i=0; i<edges.length-1; i++)
+    out.push({ n: i+1, mid: (edges[i]+edges[i+1])/2 });
+  return out;
+}
+
+// ---- render ----
+function strokeScale() { return Math.max(VB.w, VB.h) / 500; }
+function add(tag, attrs) {
+  const el = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  (sceneG || svg).appendChild(el); return el;
+}
+function applyTransform() {
+  if (sceneG) sceneG.setAttribute("transform",
+    `translate(${pz.tx} ${pz.ty}) scale(${pz.k}) rotate(${ORI})`);
+}
+function clientToScene(cx, cy) {
+  const pt = svg.createSVGPoint(); pt.x = cx; pt.y = cy;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+function sceneLocal(cx, cy) {
+  const pt = svg.createSVGPoint(); pt.x = cx; pt.y = cy;
+  return pt.matrixTransform(sceneG.getScreenCTM().inverse());
+}
+let rafPending = false;
+function scheduleRender() {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => { rafPending = false; render(); });
+}
+function zoomAt(factor, P) {
+  if (selectedEvent) clearSelection();   // zooming dismisses a pinned read-out
+  const nk = clamp(pz.k * factor, 1, 40), f = nk / pz.k;
+  pz.tx = P.x - f * (P.x - pz.tx);
+  pz.ty = P.y - f * (P.y - pz.ty);
+  pz.k = nk; scheduleRender();
+}
+function resetView() { selectedEvent = null; pz = { k: 1, tx: 0, ty: 0 }; render(); }
+function dot(p, r, fill, stroke, sw) {
+  add("circle", { cx: sx(p[0]), cy: sy(p[1]), r, fill, stroke, "stroke-width": sw }); }
+function label(p, s, col, size, dx) {
+  const x = sx(p[0])+dx, y = sy(p[1])-dx*0.4;
+  const attrs = { x, y, fill: col,
+    "font-size": size, "font-family": "var(--mono)", "paint-order": "stroke",
+    stroke: "var(--bg)", "stroke-width": size*0.18 };
+  // Counter-rotate each label by -ORI about its own anchor so it rides to the
+  // rotated position (the scene group is rotated by ORI) but stays upright.
+  if (ORI) attrs.transform = `rotate(${-ORI} ${x} ${y})`;
+  const t = add("text", attrs); t.textContent = s; }
+// Incident marker at screen point (x,y): red ✕ for a track-limits invalidation,
+// blue ▲ for a flashback, orange ◆ for contact. A faint page-coloured halo keeps
+// it legible; a tapped marker gets an accent ring. Sized in screen units (caller
+// passes s = scale/zoom).
+function eventMarker(x, y, kind, s, selected) {
+  const r = 7 * s;
+  if (selected)
+    add("circle", { cx: x, cy: y, r: r * 1.9, fill: "none",
+      stroke: cssv("--accent"), "stroke-width": 2 * s });
+  add("circle", { cx: x, cy: y, r: r * 1.2, fill: cssv("--bg"), "fill-opacity": .65 });
+  if (kind === "track_limit") {
+    const col = cssv("--danger"), a = { stroke: col, "stroke-width": 2.4 * s, "stroke-linecap": "round" };
+    add("line", Object.assign({ x1: x - r, y1: y - r, x2: x + r, y2: y + r }, a));
+    add("line", Object.assign({ x1: x - r, y1: y + r, x2: x + r, y2: y - r }, a));
+  } else if (kind === "flashback") {
+    add("path", { d: `M${x},${y-r} L${x+r*0.9},${y+r*0.72} L${x-r*0.9},${y+r*0.72} Z`,
+      fill: cssv("--flashback"), stroke: cssv("--bg"), "stroke-width": s });
+  } else {   // contact
+    add("path", { d: `M${x},${y-r} L${x+r},${y} L${x},${y+r} L${x-r},${y} Z`,
+      fill: cssv("--contact"), stroke: cssv("--bg"), "stroke-width": s });
+  }
+}
+// Screen position of a marker, fanned along the line-perpendicular when several
+// markers share ~the same lap distance (e.g. a contact and the flashback that
+// undid it), so overlapping markers are all visible. r is the marker radius, so
+// the fan spacing is constant on screen at any zoom.
+function markerScenePos(ev, r) {
+  // Place the marker on the driven line of the lap it happened on — where the
+  // car actually was — not the ideal racing line. Falls back to the racing line
+  // when that lap has no profile (races / practice, or an unprofiled lap).
+  const lap = ev.lap_num != null
+    ? LAPS.find(l => l.num === ev.lap_num && l.driven && l.driven.length) : null;
+  const line = lap ? lap.driven : TRACK.racing_line;
+  const p = posAtDistance(line, ev.distance, total());
+  if (!p) return null;
+  let x = sx(p[0]), y = sy(p[1]);
+  if (ev._fanN > 1 && ev._perp) {
+    const off = (ev._fanI - (ev._fanN - 1) / 2) * 2.0 * r;
+    x += ev._perp[0] * off;
+    y += ev._perp[1] * off;
+  }
+  return [x, y];
+}
+// Group markers by near-equal lap distance and give each a fan index + a
+// screen-space perpendicular (from the racing-line tangent), so co-located
+// markers spread apart. Recomputed whenever EVENTS change.
+function computeEventFan() {
+  const tot = total(), line = TRACK.racing_line, n = line.length;
+  const used = EVENTS.map(() => false);
+  for (let i = 0; i < EVENTS.length; i++) {
+    if (used[i]) continue;
+    const group = [EVENTS[i]]; used[i] = true;
+    for (let j = i + 1; j < EVENTS.length; j++)
+      if (!used[j] && Math.abs(EVENTS[j].distance - EVENTS[i].distance) <= _FAN_M) {
+        group.push(EVENTS[j]); used[j] = true;
+      }
+    group.forEach((e, k) => { e._fanI = k; e._fanN = group.length; });
+  }
+  EVENTS.forEach(e => {
+    if (!n) { e._perp = null; return; }
+    const idx = Math.min(n - 1, Math.max(0, Math.round(e.distance / tot * (n - 1))));
+    const a = line[(idx - 1 + n) % n], b = line[(idx + 1) % n];
+    const tx = sx(b[0]) - sx(a[0]), ty = sy(b[1]) - sy(a[1]);
+    const mag = Math.hypot(tx, ty) || 1;
+    e._perp = [-ty / mag, tx / mag];
+  });
+}
+const _FAN_M = 20;   // markers within this many metres fan apart
+
+function render() {
+  if (!TRACK) return;
+  const t = TRACK, tot = total(), s = strokeScale() / pz.k;
+  // Reuse a persistent sceneG (a fresh <g> has no reliable getScreenCTM() until
+  // the next paint, which would break a tap fired right after a re-render).
+  if (!sceneG || sceneG.parentNode !== svg) {
+    svg.textContent = "";
+    sceneG = document.createElementNS(SVGNS, "g");
+    svg.appendChild(sceneG);
+  } else {
+    sceneG.textContent = "";
+  }
+
+  if (vis.edges && t.left_edge && t.left_edge.length && t.right_edge && t.right_edge.length) {
+    const ring = [...t.left_edge, ...[...t.right_edge].reverse()];
+    add("path", { d: smoothPath(ring, true), fill: cssv("--surface"), stroke: "none" });
+    add("path", { d: smoothPath(t.left_edge, true),  fill:"none", stroke: cssv("--left"),
+      "stroke-width": 1.5*s, "stroke-opacity": .5 });
+    add("path", { d: smoothPath(t.right_edge, true), fill:"none", stroke: cssv("--right"),
+      "stroke-width": 1.5*s, "stroke-opacity": .5 });
+  }
+
+  if (vis.ideal && t.racing_line.length)
+    add("path", { d: smoothPath(t.racing_line, true), fill:"none", stroke: cssv("--ideal"),
+      "stroke-width": 2.5*s, "stroke-opacity": .95, "stroke-linejoin": "round" });
+
+  // Driven laps, selected ones only. Best lap drawn last / thickest so it sits
+  // on top of the rest.
+  const shown = LAPS.filter(l => l.on && l.driven && l.driven.length);
+  shown.sort((a, b) => (a.best === b.best) ? 0 : (a.best ? 1 : -1));
+  shown.forEach(l => {
+    add("path", { d: smoothPath(l.driven, true), fill:"none", stroke: l.color,
+      "stroke-width": (l.best ? 3 : 2)*s, "stroke-opacity": l.best ? 1 : .85,
+      "stroke-linejoin": "round", "stroke-linecap": "round" });
+  });
+
+  if (vis.sections) sections().forEach((m, k) => {
+    if (!Number.isFinite(m.start_m) || !Number.isFinite(m.end_m)) return;
+    const seg = spanPoints(t.racing_line, m.start_m, m.end_m, tot);
+    const col = cssv("--accent");
+    add("path", { d: smoothPath(seg, false), fill:"none", stroke: col,
+      "stroke-width": 6*s, "stroke-opacity": .28, "stroke-linecap": "round" });
+    const mid = posAtDistance(t.racing_line, spanMid(m.start_m, m.end_m, tot), tot);
+    if (mid) label(mid, sectionLabel(m), col, 15*s, 0);
+  });
+
+  if (vis.sectors) {
+    sectorRegions(t).forEach(r => {
+      const mid = posAtDistance(t.racing_line, r.mid, tot);
+      if (mid) label(mid, "S" + r.n, cssv("--sector"), 15*s, 0);
+    });
+    (t.sectors||[]).forEach(sec => {
+      const p = posAtDistance(t.racing_line, sec.lap_dist_m, tot) || sec.pos;
+      if (p) dot(p, 4*s, cssv("--sector"), cssv("--bg"), 1.5*s);
+    });
+  }
+
+  // Incident markers — where on the lap track limits / contact / flashbacks
+  // happened. Drawn near-last so they sit above the lines; the selected one last
+  // of all so its ring is never covered.
+  if (vis.events) {
+    const r = 7 * s;
+    EVENTS.forEach(ev => {
+      if (ev === selectedEvent) return;
+      const sp = markerScenePos(ev, r);
+      if (sp) eventMarker(sp[0], sp[1], ev.kind, s, false);
+    });
+    if (selectedEvent && EVENTS.indexOf(selectedEvent) >= 0) {
+      const sp = markerScenePos(selectedEvent, r);
+      if (sp) eventMarker(sp[0], sp[1], selectedEvent.kind, s, true);
+    }
+  }
+
+  if (vis.sf && t.sf_line && t.sf_line.pos) {
+    dot(t.sf_line.pos, 6*s, "none", cssv("--sf"), 2.5*s);
+    label(t.sf_line.pos, "S/F", cssv("--sf"), 14*s, 10*s);
+  }
+  applyTransform();
+}
+
+// ---- UI ----
+function fmt(n) { return Math.round(n).toLocaleString(); }
+function fmtLap(sec) {
+  if (sec == null || !isFinite(sec)) return "—";
+  const m = Math.floor(sec / 60), s = sec - m*60;
+  return `${m}:${s.toFixed(3).padStart(6, "0")}`;
+}
+function fmtSector(sec) {
+  return (sec == null || !isFinite(sec)) ? "—" : sec.toFixed(3);
+}
+function chips() {
+  const ss = (DATA && DATA.session) || {};
+  const rows = [
+    ["Game", (ss.game || (TRACK && TRACK.game) || "").toUpperCase() || "—"],
+    ["Class", ss.title || DATA.car_class || "—"],
+    ["Session", (ss.session_type || "").toUpperCase() || "—"],
+    ["Laps", String(LAPS.length)],
+    ["Length", fmt(total()) + " m"],
+  ];
+  $("chips").innerHTML = rows.map(([k,v]) => `<span class="chip">${k} <b>${esc(v)}</b></span>`).join("");
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+// Theoretical-best sectors: the fastest S1, S2 and S3 across all laps (each
+// sector is timed and valid on its own, so an invalid lap can still own the
+// best sector). Records the owning lap so a lap can be flagged as contributing
+// to the theo lap. Returns {s1:{time,num}|null, ...}.
+function computeTheo(laps) {
+  const theo = { s1: null, s2: null, s3: null };
+  for (const key of ["s1", "s2", "s3"]) {
+    for (const l of laps) {
+      const v = l[key];
+      if (typeof v === "number" && v > 0 && (!theo[key] || v < theo[key].time))
+        theo[key] = { time: v, num: l.num };
+    }
+  }
+  laps.forEach(l => {
+    l.ownsTheo = ["s1", "s2", "s3"].some(k => theo[k] && theo[k].num === l.num);
+  });
+  return theo;
+}
+function secCell(lap, key, n) {
+  const v = lap[key];
+  const best = THEO[key] && THEO[key].num === lap.num && THEO[key].time === v;
+  return `<span class="sec${best ? ' best' : ''}"><span class="lab">S${n}</span>` +
+         `${v != null ? fmtSector(v) : '—'}</span>`;
+}
+function buildLapList() {
+  const ul = $("lapList"), btns = $("lapBtns");
+  if (!LAPS.length) {
+    ul.innerHTML = `<li class="none">${EVENTS.length
+      ? "No per-lap line recorded — incidents are marked on the map."
+      : "No per-lap line recorded for this session."}</li>`;
+    if (btns) btns.hidden = true;
+    return;
+  }
+  if (btns) btns.hidden = false;
+  ul.innerHTML = "";
+  LAPS.forEach((l, i) => {
+    const li = document.createElement("li");
+    li.className = "lap" + (l.on ? "" : " off");
+    li.innerHTML =
+      `<span class="sw" style="background:${l.color}"></span>` +
+      `<span class="num">Lap ${l.num}${l.best ? ' <span class="star">★</span>' : ''}</span>` +
+      (l.invalid ? `<span class="badge">inv</span>` : ``) +
+      `<span class="time">${fmtLap(l.time)}</span>` +
+      `<span class="sectors">${secCell(l,'s1',1)}${secCell(l,'s2',2)}${secCell(l,'s3',3)}</span>`;
+    onTap(li, () => { l.on = !l.on; li.classList.toggle("off", !l.on);
+                      computeVB(TRACK); render(); updateHud(); });
+    ul.appendChild(li);
+  });
+}
+function buildLayers() {
+  const box = $("layers");
+  box.innerHTML = "";
+  LAYERS.forEach(L => {
+    const row = document.createElement("label");
+    row.className = "layer";
+    row.innerHTML = `<input type="checkbox" ${vis[L.key] ? "checked" : ""}>` +
+      `<span class="swline" style="background:${cssv(L.css)}"></span>${L.label}`;
+    row.querySelector("input").addEventListener("change", e => {
+      vis[L.key] = e.target.checked; render();
+    });
+    box.appendChild(row);
+  });
+}
+function setLaps(pred) { LAPS.forEach(l => l.on = pred(l)); computeVB(TRACK); render(); buildLapList(); updateHud(); }
+
+let flashTimer;
+function updateHud(msg) {
+  const hud = $("hud"); hud.hidden = false;
+  if (msg) {
+    hud.textContent = msg;
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(updateHud, 2200);
+    return;
+  }
+  if (selectedEvent) return;   // a marker read-out is pinned — leave it up
+  const on = LAPS.filter(l => l.on).length;
+  const touch = window.matchMedia("(pointer: coarse)").matches;
+  const lapPart = LAPS.length ? `${on}/${LAPS.length} lap${LAPS.length===1?'':'s'} shown · ` : "";
+  hud.textContent = lapPart +
+    (touch ? "pinch to zoom · double-tap to fit" : "scroll to zoom · drag to pan");
+}
+// A read-out that stays up (no timer) until the map next moves.
+function pinHud(text) { const hud = $("hud"); hud.hidden = false;
+  clearTimeout(flashTimer); hud.textContent = text; }
+// Panning or zooming clears a pinned marker read-out + its highlight.
+function clearSelection() {
+  if (!selectedEvent) return;
+  selectedEvent = null;
+  render();
+  updateHud();
+}
+
+// ---- load ----
+function resolveRacingLine(t, carClass) {
+  const lines = (t && t.lines) || {};
+  let e = carClass && lines[carClass];
+  if (!e || !e.racing_line || !e.racing_line.length) {
+    // Fall back to any class that has a line (shared-line games).
+    e = Object.values(lines).find(v => v && v.racing_line && v.racing_line.length) || null;
+  }
+  return (e && e.racing_line) || [];
+}
+function loadData(data) {
+  if (!data || !data.track) { updateHud("No track in that data."); return; }
+  DATA = data;
+  TRACK = data.track;
+  ORI = Number(TRACK.orientation) || 0;      // cosmetic display rotation, baked into the map
+  ["left_edge","right_edge","sectors"].forEach(k => TRACK[k] = TRACK[k] || []);
+  TRACK.racing_line = resolveRacingLine(TRACK, data.car_class);
+  NORMALS = TRACK.racing_line.length ? rightNormals(TRACK.racing_line) : [];
+
+  const best = data.best_num;
+  LAPS = (data.laps || []).map((lap, i) => {
+    const offsets = lap.offsets || [];
+    return {
+      num: lap.num, time: lap.time, invalid: !!lap.invalid,
+      s1: lap.s1, s2: lap.s2, s3: lap.s3, offsets,
+      color: LAP_COLORS[i % LAP_COLORS.length],
+      driven: (NORMALS.length && offsets.length) ? drivenLine(offsets) : null,
+      best: best != null && lap.num === best,
+      on: best != null ? lap.num === best : i === 0,   // best only by default
+    };
+  });
+  THEO = computeTheo(LAPS);
+  EVENTS = (data.events || []).filter(e => e && e.distance != null);
+  selectedEvent = null;
+  computeEventFan();
+
+  $("trackName").textContent = TRACK.track || (data.session && data.session.track) || "Track";
+  $("empty").hidden = true; $("mapctl").hidden = false;
+  $("eventKey").hidden = EVENTS.length === 0;
+  updateWide();
+  computeVB(TRACK);
+  chips(); buildLapList(); buildLayers();
+  pz = { k: 1, tx: 0, ty: 0 };
+  render(); updateHud();
+}
+// Sector columns only fit on wide screens (iPad / desktop) — toggle the body
+// class the CSS keys off, and re-check on resize/rotate.
+function updateWide() {
+  document.body.classList.toggle("wide", window.innerWidth >= 820);
+}
+window.addEventListener("resize", updateWide);
+
+// Standalone (non-embedded) file loading: a track JSON + a session CSV. Lets the
+// viewer be used from a desktop browser with files pulled off the Pi. The
+// companion instead bakes the data in via SHFONIC.load().
+let pendingTrack = null, pendingLaps = null;
+function tryStandalone() {
+  if (pendingTrack && pendingLaps)
+    loadData({ track: pendingTrack, car_class: pendingLaps.car_class,
+               session: pendingLaps.session, best_num: pendingLaps.best_num,
+               laps: pendingLaps.laps, events: pendingLaps.events });
+}
+// Classify a raw E-row for the map (mirrors sessionlog.lines._classify_map_event
+// so the standalone browser path matches the baked-in companion path).
+function classifyCsvEvent(type, detail) {
+  if (type === "rewind") return "flashback";
+  if (type === "collision") return "contact";
+  if (type === "invalid" || type === "track_limit_warning") return "track_limit";
+  if (type === "penalty") {
+    const infr = ((detail || "").split(":")[1] || "").toLowerCase();
+    if (infr.includes("collision")) return "contact";
+    if (infr.includes("wide") || infr.includes("track limit") ||
+        infr.includes("corner cut") || infr.includes("cutting")) return "track_limit";
+  }
+  return null;
+}
+// Parse P/L/E rows out of a raw session CSV. P offsets are decimetres → metres.
+function parseCsv(text) {
+  const laps = {}, times = {}, invalid = {}, secs = {}, rawEvents = [];
+  let carClass = "", game = "", track = "", stype = "";
+  for (const raw of text.split(/\r?\n/)) {
+    if (!raw) continue;
+    const f = raw.split(",");
+    const type = f[0];
+    if (type === "P") {
+      const num = parseInt(f[1], 10);
+      if (!isNaN(num)) laps[num] = f.slice(2).map(v => (parseInt(v, 10) || 0) / 10);
+    } else if (type === "L") {
+      const num = parseInt(f[1], 10);
+      if (!isNaN(num)) {
+        times[num] = parseFloat(f[2]);
+        secs[num] = [parseFloat(f[3]), parseFloat(f[4]), parseFloat(f[5])];
+        invalid[num] = f[15] === "1";
+      }
+    } else if (type === "E") {
+      // E,lap_num,lap_time,type,distance,t,detail
+      const kind = classifyCsvEvent(f[3], f[6]), dist = parseFloat(f[4]);
+      if (kind && isFinite(dist)) rawEvents.push({ distance: dist, kind });
+    } else if (type === "S") {
+      // Session meta rows are S,key,value — grab the few fields we can label with.
+      const k = f[1], v = f.slice(2).join(",");
+      if (k === "car_class") carClass = v;
+      else if (k === "game") game = v;
+      else if (k === "track") track = v;
+      else if (k === "session_type") stype = v;
+    }
+  }
+  const nums = Object.keys(laps).map(Number).sort((a,b) => a-b);
+  if (!nums.length) return null;
+  // Best clean profiled lap = fastest valid, else fastest.
+  const valid = nums.filter(n => !invalid[n] && times[n]);
+  const pool = valid.length ? valid : nums.filter(n => times[n]);
+  const best = pool.length ? pool.reduce((a,b) => times[b] < times[a] ? b : a) : null;
+  // Dedupe events of the same kind within 25 m (many frames flag one excursion).
+  const events = [];
+  for (const e of rawEvents.sort((a,b) => a.distance - b.distance)) {
+    if (!events.some(m => m.kind === e.kind && Math.abs(m.distance - e.distance) <= 25))
+      events.push(e);
+  }
+  const sec = (n, i) => (secs[n] && isFinite(secs[n][i])) ? secs[n][i] : null;
+  return {
+    car_class: carClass, best_num: best, events,
+    session: { title: carClass, session_type: stype, game, track },
+    laps: nums.map(n => ({ num: n, time: times[n] ?? null, invalid: !!invalid[n],
+                           s1: sec(n,0), s2: sec(n,1), s3: sec(n,2), offsets: laps[n] })),
+  };
+}
+
+$("openTrack").addEventListener("click", () => $("trackFile").click());
+$("openCsv").addEventListener("click", () => $("csvFile").click());
+$("trackFile").addEventListener("change", e => {
+  const file = e.target.files[0]; if (!file) return;
+  const r = new FileReader();
+  r.onload = () => { try { pendingTrack = JSON.parse(r.result); tryStandalone();
+    updateHud("Track loaded" + (pendingLaps ? "" : " — now open the session CSV")); }
+    catch { updateHud("That file isn't valid track JSON."); } };
+  r.readAsText(file); e.target.value = "";
+});
+$("csvFile").addEventListener("change", e => {
+  const file = e.target.files[0]; if (!file) return;
+  const r = new FileReader();
+  r.onload = () => { const p = parseCsv(r.result);
+    if (!p) { updateHud("No racing-line data (P rows) in that CSV."); return; }
+    pendingLaps = p; tryStandalone();
+    updateHud("Session loaded" + (pendingTrack ? "" : " — now open the track JSON")); };
+  r.readAsText(file); e.target.value = "";
+});
+
+// ---- host bridge (companion WebView) ----
+// The native app bakes the data in and applies the theme, mirroring the
+// SHFONIC.* surface that track_viewer.html exposes to the same host.
+window.SHFONIC = {
+  load: payload => {
+    const data = typeof payload === "string" ? JSON.parse(payload) : payload;
+    document.body.classList.add("embedded");
+    loadData(data);
+  },
+  embed: () => document.body.classList.add("embedded"),
+  setTheme: (mode, scale) => {
+    const root = document.documentElement;
+    if (mode === "light") root.setAttribute("data-theme", "light");
+    else root.removeAttribute("data-theme");
+    const s = Number(scale);
+    root.style.setProperty("--fscale", (isFinite(s) && s > 0) ? s : 1);
+    if (TRACK) { buildLayers(); render(); }
+  },
+};
+// A page can also be opened with the data pre-injected as window.VIEWER_DATA.
+if (window.VIEWER_DATA) { document.body.classList.add("embedded"); loadData(window.VIEWER_DATA); }
+
+// ---- pan / zoom / tap (shared behaviour with track_viewer.html) ----
+function onTap(el, fn) {
+  // A tap that isn't the tail of a drag — pointerup within a few px of down.
+  let dx, dy, moved;
+  el.addEventListener("pointerdown", e => { dx = e.clientX; dy = e.clientY; moved = false; });
+  el.addEventListener("pointermove", e => {
+    if (dx != null && Math.hypot(e.clientX - dx, e.clientY - dy) > 8) moved = true; });
+  el.addEventListener("pointerup", e => { if (!moved) fn(e); dx = null; });
+}
+onTap($("zin"), () => zoomAt(1.4, stageCentre()));
+onTap($("zout"), () => zoomAt(1/1.4, stageCentre()));
+onTap($("zfit"), () => { resetView(); updateHud("Fit to view"); });
+onTap($("showBest"),  () => setLaps(l => l.best));
+onTap($("showValid"), () => setLaps(l => !l.invalid));
+onTap($("showTheo"),  () => setLaps(l => l.ownsTheo));
+onTap($("showAll"),   () => setLaps(() => true));
+onTap($("showNone"),  () => setLaps(() => false));
+
+function stageCentre() {
+  const r = svg.getBoundingClientRect();
+  return clientToScene(r.left + r.width/2, r.top + r.height/2);
+}
+
+svg.addEventListener("wheel", e => {
+  if (!TRACK) return;
+  e.preventDefault();
+  zoomAt(e.deltaY < 0 ? 1.15 : 1/1.15, clientToScene(e.clientX, e.clientY));
+}, { passive: false });
+
+let drag = null, downClient = null, moved = false;
+const pointers = new Map();
+let pinchPrev = null;
+function pinchState() {
+  const ps = [...pointers.values()];
+  const dx = ps[0].x - ps[1].x, dy = ps[0].y - ps[1].y;
+  return { dist: Math.hypot(dx, dy), mx: (ps[0].x+ps[1].x)/2, my: (ps[0].y+ps[1].y)/2 };
+}
+function purgeStale() {
+  const now = Date.now();
+  for (const [id, p] of pointers) if (now - p.t > 1500) pointers.delete(id);
+  if (pointers.size < 2) pinchPrev = null;
+}
+svg.addEventListener("pointerdown", e => {
+  if (!TRACK) return;
+  purgeStale();
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, t: Date.now() });
+  if (pointers.size === 2) { drag = null; downClient = null;
+    pinchPrev = pinchState(); svg.classList.add("grabbing"); return; }
+  if (pointers.size > 2) return;
+  svg.classList.add("grabbing");
+  drag = clientToScene(e.clientX, e.clientY);
+  downClient = { x: e.clientX, y: e.clientY }; moved = false;
+});
+svg.addEventListener("pointermove", e => {
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, t: Date.now() });
+  if (pointers.size >= 2) {
+    const s = pinchState();
+    if (pinchPrev && s.dist > 0 && pinchPrev.dist > 0) {
+      const P = clientToScene(s.mx, s.my), prevP = clientToScene(pinchPrev.mx, pinchPrev.my);
+      pz.tx += P.x - prevP.x; pz.ty += P.y - prevP.y;
+      zoomAt(s.dist / pinchPrev.dist, P);
+    }
+    pinchPrev = s; return;
+  }
+  if (drag) {
+    if (downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) > 4) {
+      if (!moved && selectedEvent) clearSelection();   // panning dismisses the pin
+      moved = true;
+    }
+    const p = clientToScene(e.clientX, e.clientY);
+    pz.tx += p.x - drag.x; pz.ty += p.y - drag.y;
+    drag = p; applyTransform();
+  }
+});
+function endDrag() { drag = null; downClient = null; moved = false; svg.classList.remove("grabbing"); }
+function dropPointer(id) {
+  pointers.delete(id);
+  if (pointers.size < 2) { pinchPrev = null; drag = null; }
+  if (pointers.size === 0) endDrag();
+}
+let lastTap = 0, lastTapXY = null;
+svg.addEventListener("pointerup", e => {
+  if (pointers.size === 1 && drag && !moved) {
+    const now = Date.now();
+    if (now - lastTap < 300 && lastTapXY &&
+        Math.hypot(e.clientX - lastTapXY.x, e.clientY - lastTapXY.y) < 30) {
+      resetView(); updateHud("Fit to view"); lastTap = 0;      // double-tap → fit
+    } else {
+      mapTap(e.clientX, e.clientY);                             // single tap → read out
+      lastTap = now; lastTapXY = { x: e.clientX, y: e.clientY };
+    }
+  }
+  dropPointer(e.pointerId);
+});
+svg.addEventListener("pointercancel", e => dropPointer(e.pointerId));
+window.addEventListener("pointerup", e => dropPointer(e.pointerId));
+window.addEventListener("pointercancel", e => dropPointer(e.pointerId));
+function clearAllPointers(e) { if (e.touches && e.touches.length) return;
+  pointers.clear(); pinchPrev = null; endDrag(); }
+window.addEventListener("touchend", clearAllPointers);
+window.addEventListener("touchcancel", clearAllPointers);
+document.addEventListener("pointerdown", e => {
+  if (!svg.contains(e.target)) { pointers.clear(); pinchPrev = null; endDrag(); }
+}, true);
+
+const EVENT_LABEL = { track_limit: "Track limits", contact: "Contact", flashback: "Flashback" };
+// The incident marker nearest the tap, within a finger-friendly screen radius —
+// or null. Lets a tap on a marker read out what it was instead of zooming.
+function hitEvent(cx, cy) {
+  if (!vis.events || !EVENTS.length || !sceneG) return null;
+  const ctm = sceneG.getScreenCTM(); if (!ctm) return null;
+  const r = 7 * strokeScale() / pz.k;
+  let found = null, fd = 22;   // px
+  for (const ev of EVENTS) {
+    const sp = markerScenePos(ev, r); if (!sp) continue;
+    const pt = svg.createSVGPoint(); pt.x = sp[0]; pt.y = sp[1];
+    const scr = pt.matrixTransform(ctm);
+    const d = Math.hypot(scr.x - cx, scr.y - cy);
+    if (d < fd) { fd = d; found = ev; }
+  }
+  return found;
+}
+// The lap list for a marker's tooltip: "Lap 4" / "Laps 1, 2" (consolidated).
+function lapsLabel(ev) {
+  const laps = (ev.laps && ev.laps.length) ? ev.laps
+    : (ev.lap_num != null ? [ev.lap_num] : []);
+  if (!laps.length) return "";
+  return (laps.length === 1 ? "Lap " : "Laps ") + laps.join(", ");
+}
+// Broadcast surnames arrive upper-case (PÉREZ); title-case them for the tooltip.
+function titleCase(s) {
+  return String(s).replace(/\S+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+// The kind label, naming the other car(s) for a contact ("Contact with Stroll").
+function kindLabel(ev) {
+  let base = EVENT_LABEL[ev.kind] || "Incident";
+  if (ev.kind === "contact" && ev.drivers && ev.drivers.length)
+    base += " with " + ev.drivers.map(titleCase).join(", ");
+  return base;
+}
+// A tap reads out what's under it — an incident marker if one is there (which it
+// highlights and pins until the map next moves), otherwise the nearest corner.
+// It never zooms: zoom is pinch / scroll / the buttons, which the user prefers.
+function mapTap(cx, cy) {
+  const ev = hitEvent(cx, cy);
+  if (ev) {
+    selectedEvent = ev;
+    const where = locateSection(ev.distance);
+    pinHud([lapsLabel(ev), kindLabel(ev),
+            where ? sectionLabel(where) : null].filter(Boolean).join(" · "));
+    render();
+    return;
+  }
+  if (selectedEvent) { clearSelection(); return; }   // tap away → dismiss
+  const local = sceneLocal(cx, cy), line = TRACK.racing_line, n = line.length;
+  if (!n) return;
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < n; i++) {
+    const ddx = sx(line[i][0]) - local.x, ddy = sy(line[i][1]) - local.y, d = ddx*ddx + ddy*ddy;
+    if (d < bd) { bd = d; best = i; }
+  }
+  const dist = best / (n - 1) * total();
+  const sec = locateSection(dist);
+  updateHud(`${sec ? sectionLabel(sec) + " · " : ""}${fmt(dist)} m`);
+}
+</script>
+</body>
+</html>

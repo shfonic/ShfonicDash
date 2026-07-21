@@ -1,0 +1,19 @@
+{
+    "name": "GT4 Race",
+    "background": [12, 13, 16],
+    "widgets": [
+        { "type": "ShiftLightsWidget", "x": 0,   "y": 0,   "width": 800, "height": 32, "count": 14 },
+        { "type": "FlagWidget",        "x": 650,  "y": 2,   "width": 148, "height": 28 },
+        { "type": "PositionWidget",    "x": 0,    "y": 32,  "width": 90,  "height": 80, "show_total": true },
+        { "type": "LapCounterWidget",  "x": 90,   "y": 32,  "width": 80,  "height": 80 },
+        { "type": "LapInfoWidget",     "x": 170,  "y": 32,  "width": 630, "height": 80 },
+        { "type": "GearWidget",        "x": 0,    "y": 112, "width": 210, "height": 190 },
+        { "type": "RPMGaugeWidget",    "x": 210,  "y": 112, "width": 360, "height": 190 },
+        { "type": "SpeedWidget",       "x": 570,  "y": 112, "width": 230, "height": 100, "unit": "km/h" },
+        { "type": "PedalsWidget",      "x": 570,  "y": 212, "width": 230, "height": 90 },
+        { "type": "TyreWidget",        "x": 0,    "y": 302, "width": 260, "height": 128, "show_pressure": true, "cold_temp": 55, "hot_temp": 100 },
+        { "type": "SectorTimesWidget", "x": 260,  "y": 302, "width": 540, "height": 50 },
+        { "type": "FuelWidget",        "x": 260,  "y": 352, "width": 540, "height": 78, "show_laps": true },
+        { "type": "ProximityWidget",   "x": 0,    "y": 430, "width": 800, "height": 50 }
+    ]
+}

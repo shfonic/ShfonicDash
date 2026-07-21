@@ -1,0 +1,4 @@
+{
+    "name": "DeLorean DMC-12 — Back to the Future",
+    "python_class": "dashboard.delorean_dashboard.DeLoreanDashboard"
+}

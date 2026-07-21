@@ -1,0 +1,1345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Track Map · Shfonic Dash</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='3' y='7' width='18' height='11' rx='5.5' fill='none' stroke='%23ffb300' stroke-width='2.6'/><circle cx='12' cy='7' r='2.2' fill='%23ffb300'/></svg>" />
+<style>
+  :root {
+    --bg: #0a0d12; --panel: #10151d; --panel2: #161c26; --line: #232b38;
+    --line2: #313b4b; --text: #e7edf5; --muted: #8b95a6; --dim: #5b6576;
+    --accent: #ffb300;
+    --left: #5a96f5; --right: #f5963f; --race: #58d980;
+    --sf: #ffffff; --sector: #e6cf46; --surface: rgba(120,140,170,0.10);
+    --pit: #c678dd;
+    /* Translucent panel behind the on-map hint (.hud) — flips per theme so the
+       hint stays legible over a light *or* dark map. */
+    --hud-bg: rgba(10,13,18,0.72);
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    /* UI font scale — the host sets this from the app's Small/Medium/Large
+       setting via SHFONIC.setTheme(); every chrome font-size is calc()'d by it.
+       The SVG map labels are drawn in JS and are intentionally not scaled. */
+    --fscale: 1;
+  }
+  /* Light appearance — driven by data-theme="light" on <html>, set by the host
+     from the app's Dark/Light setting. Colours only; the map reads these vars
+     live (see cssv()), so the map re-tints on the next render(). Map-feature
+     hues are deepened so they read on the light surfaces, and the start/finish
+     line flips from white to a dark line so it stays visible. */
+  :root[data-theme="light"] {
+    --bg: #f4f6f9; --panel: #ffffff; --panel2: #eceff4; --line: #d6dbe2;
+    --line2: #c2cad4; --text: #171c23; --muted: #566171; --dim: #8a92a0;
+    --accent: #b07800;
+    --left: #2e6fd4; --right: #cf6a17; --race: #2f9e57;
+    --sf: #3a4048; --sector: #9a8500; --surface: rgba(40,70,110,0.08);
+    --pit: #9a4fb5;
+    --hud-bg: rgba(255,255,255,0.9);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); -webkit-font-smoothing: antialiased;
+    /* App-like: no text selection or long-press "Copy / Look Up" callout on the
+       controls (it fired when tapping the ± buttons repeatedly). Re-enabled on
+       the text fields below so you can still edit what you type. */
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  input, textarea { -webkit-user-select: text; user-select: text;
+    -webkit-touch-callout: default; }
+  .wrap { display: grid; grid-template-columns: 1fr 360px; grid-template-rows: auto 1fr;
+    height: 100vh; gap: 1px; background: var(--line); }
+  header { grid-column: 1 / -1; background: var(--panel); padding: 12px 20px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand .mark { display: block; }
+  .brand .lock { display: flex; flex-direction: column; line-height: 1.2; }
+  .brand .wm { font-family: var(--mono); font-size: calc(13px * var(--fscale)); letter-spacing: .24em;
+    font-weight: 700; color: var(--text); }
+  .brand .wm b { color: var(--accent); font-weight: 700; }
+  .brand .sub { font-family: var(--mono); font-size: calc(9px * var(--fscale)); letter-spacing: .18em;
+    text-transform: uppercase; color: var(--dim); }
+  .track-id { display: flex; align-items: baseline; gap: 9px; padding-left: 16px;
+    border-left: 1px solid var(--line2); }
+  .track-id .tlabel { font-family: var(--mono); font-size: calc(10px * var(--fscale)); letter-spacing: .16em;
+    color: var(--dim); }
+  .track-id .t { font-family: var(--mono); font-size: calc(15px * var(--fscale)); letter-spacing: .05em;
+    color: var(--accent); font-weight: 600; text-transform: uppercase; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+  .chip { font-family: var(--mono); font-size: calc(11px * var(--fscale)); letter-spacing: .06em;
+    color: var(--muted); background: var(--panel2); border: 1px solid var(--line);
+    padding: 4px 9px; border-radius: 5px; font-variant-numeric: tabular-nums; }
+  .chip b { color: var(--text); font-weight: 600; }
+  .stage { background: var(--bg); position: relative; overflow: hidden; }
+  svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  svg.grabbing { cursor: grabbing; }
+  .mapctl { position: absolute; top: 12px; right: 12px; display: flex;
+    flex-direction: column; gap: 6px; }
+  .mapctl button { width: 34px; height: 34px; padding: 0; font-size: calc(19px * var(--fscale)); line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(16,21,29,.88); border: 1px solid var(--line2); color: var(--text);
+    border-radius: 7px; cursor: pointer; }
+  .mapctl button:hover { border-color: var(--accent); color: var(--accent); }
+  .hud { position: absolute; left: 14px; bottom: 12px; max-width: calc(100% - 28px);
+    font-family: var(--mono); font-size: calc(11px * var(--fscale)); color: var(--muted);
+    background: var(--hud-bg); border: 1px solid var(--line);
+    border-radius: 5px; padding: 6px 9px; font-variant-numeric: tabular-nums;
+    pointer-events: none; }
+  .empty { position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; }
+  .empty[hidden] { display: none; }   /* beat the flex display when a track loads */
+  .empty .card { text-align: center; max-width: 340px; }
+  .empty h2 { font-family: var(--mono); font-size: calc(14px * var(--fscale)); letter-spacing: .14em;
+    text-transform: uppercase; color: var(--text); margin: 0 0 8px; }
+  .empty p { color: var(--muted); font-size: calc(13px * var(--fscale)); line-height: 1.6; margin: 0 0 18px; }
+  aside { background: var(--panel); padding: 16px; overflow-y: auto; display: flex;
+    flex-direction: column; gap: 20px; }
+  .grp-title { font-family: var(--mono); font-size: calc(11px * var(--fscale)); letter-spacing: .14em;
+    text-transform: uppercase; color: var(--dim); margin: 0 0 10px; }
+  .layers { display: flex; flex-direction: column; gap: 7px; }
+  .layer { display: flex; align-items: center; gap: 9px; font-size: calc(13px * var(--fscale));
+    cursor: pointer; user-select: none; }
+  .layer input { accent-color: var(--accent); width: 15px; height: 15px; }
+  .sw { width: 14px; height: 3px; border-radius: 2px; flex: none; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  label.lab { font-family: var(--mono); font-size: calc(10px * var(--fscale)); letter-spacing: .1em;
+    text-transform: uppercase; color: var(--dim); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .dist-row { display: flex; align-items: center; gap: 8px; font-family: var(--mono);
+    font-variant-numeric: tabular-nums; }
+  .dist-row .big { font-size: calc(22px * var(--fscale)); color: var(--accent); font-weight: 600; }
+  .dist-row .u { font-size: calc(12px * var(--fscale)); color: var(--muted); }
+  .dist-row .nudge { margin-left: auto; display: flex; gap: 5px; }
+  .dist-row .nudge button { width: 32px; height: 28px; padding: 0; font-size: calc(16px * var(--fscale));
+    line-height: 1; display: flex; align-items: center; justify-content: center; }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  button { font-family: var(--sans); font-size: 12.5px; color: var(--text);
+    background: var(--panel2); border: 1px solid var(--line2); border-radius: 6px;
+    padding: 7px 11px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #201700; border-color: var(--accent);
+    font-weight: 600; }
+  button:disabled { opacity: .45; cursor: default; border-color: var(--line2); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .row { display: flex; gap: 8px; }
+  .row > * { min-width: 0; }
+  input[type=text], select, textarea { font-family: var(--sans); font-size: calc(13px * var(--fscale));
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line2);
+    border-radius: 6px; padding: 7px 9px; width: 100%; }
+  textarea { resize: vertical; line-height: 1.4; }
+  input[type=text]:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  /* A field that failed validation on Add — cleared as soon as it's edited. */
+  .invalid, input.invalid, select.invalid { border-color: #ff6b6b !important;
+    box-shadow: 0 0 0 2px rgba(255,107,107,.25); }
+  .marks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;
+    gap: 6px; }
+  .mk { display: flex; flex-direction: column; align-items: stretch; gap: 5px;
+    background: var(--panel2); border: 1px solid var(--line); border-left-width: 3px;
+    border-radius: 5px; padding: 7px 9px; font-size: calc(13px * var(--fscale)); cursor: pointer; }
+  .mk:hover { border-color: var(--line2); }
+  .mk.editing { border-color: var(--accent); background: var(--panel); }
+  .mk .top, .mk .bot { display: flex; align-items: center; gap: 7px; }
+  .mk .tn { font-family: var(--mono); font-size: calc(10px * var(--fscale)); font-weight: 700; color: #201700;
+    background: var(--accent); border-radius: 4px; padding: 1px 5px; flex: none; }
+  .mk .nm { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mk .rng { font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+    font-variant-numeric: tabular-nums; }
+  .mk .type { font-family: var(--mono); font-size: calc(9px * var(--fscale)); letter-spacing: .08em;
+    text-transform: uppercase; color: var(--dim); }
+  .mk .del { margin-left: auto; padding: 2px 7px; font-size: calc(15px * var(--fscale)); line-height: 1;
+    background: none; border: none; color: var(--dim); flex: none; }
+  .mk .del:hover { color: var(--right); }
+  .mk .meta { font-family: var(--mono); font-size: calc(9px * var(--fscale)); letter-spacing: .05em;
+    text-transform: uppercase; color: var(--muted); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+  .mk .meta.ot { color: var(--race); border-color: var(--race); }
+  .mk .meta.sev-high { color: var(--right); border-color: var(--right); }
+  .mk .meta.sev-medium { color: var(--sector); }
+  .none { color: var(--dim); font-size: 12.5px; font-style: italic; }
+  .hint { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+  .divider { height: 1px; background: var(--line); }
+  .file-lbl { display: inline-flex; }
+
+  /* Collapsible group (Layers) — a disclosure caret on the group title. */
+  details > summary.grp-title { cursor: pointer; list-style: none;
+    display: flex; align-items: center; }
+  summary.grp-title::-webkit-details-marker { display: none; }
+  summary.grp-title::after { content: "▾"; margin-left: auto; color: var(--dim);
+    font-size: calc(11px * var(--fscale)); transition: transform .15s; }
+  details:not([open]) > summary.grp-title::after { transform: rotate(-90deg); }
+  details[open] > summary.grp-title { margin-bottom: 10px; }
+
+  /* Embedded in the companion app: the native host owns open/save, so the
+     file-open, download and copy controls are redundant — hide them. */
+  body.embedded #exportsec, body.embedded #exportdiv,
+  body.embedded #openBig { display: none; }
+
+  /* Narrow screens (phones, small tablets in portrait): the 360px control
+     column would crush the map to a sliver, so stack instead — map on top, the
+     controls scrolling in their own row below. The page itself is LOCKED to the
+     viewport (no page scroll) so dragging the map pans the map rather than
+     scrolling the page. Tablets/desktop (≥ 760px) keep the side-by-side view. */
+  @media (max-width: 760px) {
+    html, body { overflow: hidden; overscroll-behavior: none; }
+    .wrap { grid-template-columns: 1fr; grid-template-rows: auto 42vh 1fr;
+      height: 100vh; }
+    .stage { min-height: 0; touch-action: none; }
+    /* Zoom buttons are redundant on touch — pinch to zoom, double-tap to fit. */
+    .mapctl { display: none; }
+    /* aside keeps its base overflow-y:auto → scrolls within its own row */
+
+    /* Compact header: the native app bar already shows the track, so drop the
+       logo/wordmark and pack the info chips into one scrolling row. Reclaims a
+       lot of vertical space for the map + controls. */
+    header { padding: 8px 12px; gap: 8px; }
+    .brand { display: none; }
+    .track-id { padding-left: 0; }
+    .chips { flex-wrap: wrap; margin-left: 0; }   /* wrap, never run off-screen */
+
+    /* Finger-friendly targets, and let control rows wrap instead of running
+       off the right edge (the ± nudge and the severity/overtake selects). */
+    .mapctl button { width: 42px; height: 42px; font-size: calc(22px * var(--fscale)); }
+    .dist-row .nudge button { width: 46px; height: 40px; font-size: calc(20px * var(--fscale)); }
+    aside button, aside select, aside input[type=text] { min-height: 42px; }
+    input[type=range] { height: 28px; }
+    .row, .dist-row { flex-wrap: wrap; }
+    .row > select { flex: 1 1 45%; }
+    /* Put the ±1 m nudge on its own full-width line so it can't be pushed off
+       the right edge, with bigger tap targets. */
+    .dist-row .nudge { margin-left: 0; margin-top: 8px; flex-basis: 100%; }
+    .dist-row .nudge button { width: 68px; height: 42px; font-size: calc(22px * var(--fscale)); }
+
+    /* Text fields: on focus, shift the whole editor UP so the field clears the
+       on-screen keyboard — the map stays visible, it just slides up. The shift
+       amount is computed from visualViewport and applied via --kbshift. */
+    body.kbd .wrap { transform: translateY(var(--kbshift, 0px)); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <svg class="mark" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3" y="7" width="18" height="11" rx="5.5" fill="none"
+              stroke="var(--accent)" stroke-width="2.4" />
+        <circle cx="12" cy="7" r="2.1" fill="var(--accent)" />
+      </svg>
+      <div class="lock">
+        <span class="wm">SHFONIC <b>DASH</b></span>
+        <span class="sub">Track map utility</span>
+      </div>
+    </div>
+    <div class="track-id"><span class="tlabel">TRACK</span>
+      <span class="t" id="tname">no track</span></div>
+    <div class="chips" id="chips"></div>
+  </header>
+
+  <div class="stage">
+    <svg id="map" preserveAspectRatio="xMidYMid meet" aria-label="Track map"></svg>
+    <div class="mapctl" id="mapctl" hidden>
+      <button id="zin" title="Zoom in" aria-label="Zoom in">+</button>
+      <button id="zout" title="Zoom out" aria-label="Zoom out">&minus;</button>
+      <button id="zfit" title="Fit to view" aria-label="Fit to view">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path
+          d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none"
+          stroke="currentColor" stroke-width="2" /></svg>
+      </button>
+    </div>
+    <div class="hud" id="hud" hidden></div>
+    <div class="empty" id="empty">
+      <div class="card">
+        <h2>Open a recorded track</h2>
+        <p>Load a <code>tracks/&lt;game&gt;_&lt;track&gt;.json</code> file recorded by
+           Shfonic Dash to view the circuit and label its corners and straights.</p>
+        <button class="primary" id="openBig">Open track file…</button>
+      </div>
+    </div>
+  </div>
+
+  <aside>
+    <section id="clssec" hidden>
+      <p class="grp-title">Car class</p>
+      <div class="field">
+        <select id="classSel"></select>
+      </div>
+    </section>
+
+    <section>
+      <details id="layersDet">
+        <summary class="grp-title">Layers</summary>
+        <div class="layers" id="layers"></div>
+      </details>
+    </section>
+
+    <div class="divider"></div>
+
+    <section id="notessec" hidden>
+      <p class="grp-title">Notes</p>
+      <div class="field">
+        <label class="lab" for="notes">Track notes (all classes)</label>
+        <textarea id="notes" rows="2" placeholder="e.g. unfinished — missing F2 line + gears"></textarea>
+      </div>
+      <div class="field">
+        <label class="lab" for="clsNotes">Notes for this class</label>
+        <textarea id="clsNotes" rows="2" placeholder="e.g. 2026 line still rough in S2"></textarea>
+      </div>
+      <div class="field">
+        <label class="lab" for="oriRange">Map orientation · rotate the whole view</label>
+        <div class="dist-row">
+          <input type="range" id="oriRange" min="0" max="359" step="1" value="0" style="flex:1" />
+          <input type="number" id="oriNum" min="0" max="359" step="1" value="0"
+                 style="width:60px" aria-label="Orientation in degrees" />
+          <span class="u">°</span>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="oriL90" title="Rotate 90° anticlockwise">&#8630; 90&deg;</button>
+          <button id="oriR90" title="Rotate 90° clockwise">90&deg; &#8631;</button>
+          <button id="oriReset" title="Reset to north-up">Reset</button>
+        </div>
+        <p class="lab" style="margin-top:4px;opacity:.7">Cosmetic only — turns every
+           map view of this track. Coordinates are unchanged.</p>
+      </div>
+    </section>
+
+    <div class="divider" id="notesdiv" hidden></div>
+
+    <section>
+      <p class="grp-title" id="formTitle">Add a section</p>
+      <div class="field">
+        <label class="lab" for="scrub">Cursor · distance from start/finish</label>
+        <input type="range" id="scrub" min="0" max="1000" value="0" disabled />
+        <div class="dist-row"><span class="big" id="distv">0</span><span class="u">m</span>
+          <span class="u" id="pctv"></span>
+          <span class="nudge">
+            <button id="nudgeDown" title="Back 1 m" aria-label="Back one metre" disabled>&minus;</button>
+            <button id="nudgeUp" title="Forward 1 m" aria-label="Forward one metre" disabled>+</button>
+          </span></div>
+      </div>
+      <div class="btns" style="margin-top:10px">
+        <button id="setStart" disabled>Set start</button>
+        <button id="setEnd" disabled>Set end</button>
+        <button id="setApex" disabled hidden>Set apex</button>
+        <button id="clearSel" disabled>Clear</button>
+      </div>
+      <div class="btns" style="margin-top:8px">
+        <span class="chip" id="pending">start — · end —</span>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <input type="text" id="turn" placeholder="Turn #" style="max-width:118px"
+               title="Turn number, e.g. 1 or 1-2" disabled />
+        <input type="text" id="name" placeholder="Name (e.g. Jones Chicane)" disabled />
+      </div>
+      <div class="row" style="margin-top:8px">
+        <select id="type" disabled>
+          <option value="corner">corner</option>
+          <option value="straight">straight</option>
+          <option value="chicane">chicane (group)</option>
+          <option value="complex">complex (group)</option>
+          <option value="other">other</option>
+        </select>
+      </div>
+      <div class="row" id="membersRow" style="margin-top:8px" hidden>
+        <input type="text" id="members" placeholder="Grouped turns, e.g. 10, 11, 13"
+               title="Turn numbers this complex groups (comma-separated)" disabled />
+      </div>
+      <div class="row" id="metaRow" style="margin-top:8px">
+        <select id="severity" title="Corner severity" disabled>
+          <option value="">Severity —</option>
+          <option value="low">low</option><option value="medium">medium</option>
+          <option value="high">high</option>
+        </select>
+        <select id="overtake" title="Overtaking opportunity" disabled>
+          <option value="">Overtake —</option>
+          <option value="yes">yes</option><option value="no">no</option>
+        </select>
+      </div>
+      <div class="btns" style="margin-top:10px">
+        <button class="primary" id="add" disabled>Add section</button>
+        <button id="cancelEdit" hidden>Cancel</button>
+      </div>
+    </section>
+
+    <section>
+      <p class="grp-title">Sections <span id="count" style="color:var(--dim)"></span></p>
+      <ul class="marks" id="marks"><li class="none">No track loaded.</li></ul>
+    </section>
+
+    <div class="divider" id="exportdiv"></div>
+
+    <section id="exportsec">
+      <div class="btns">
+        <button id="download" disabled>Download track</button>
+        <button id="copy" disabled>Copy JSON</button>
+        <button id="openSmall">Open track…</button>
+      </div>
+      <p class="hint" style="margin-top:10px">Click a section to edit its wording, points or
+        metadata. A section runs <b>start → end</b> in driving order and may cross the
+        start/finish line (the main straight); sections can overlap. The turn number and
+        the (unofficial) common name are separate. Gear / severity / overtake are optional.
+        Stored as distance spans (metres from S/F) <b>inside the track file</b>; Download
+        writes the whole <code>&lt;game&gt;_&lt;track&gt;.json</code> back out (ready to sync).</p>
+    </section>
+  </aside>
+</div>
+
+<input type="file" id="file" accept=".json,application/json" hidden />
+
+<script>
+"use strict";
+let TRACK = null;
+let _dirty = false;                    // any unsaved change since the last load?
+function markDirty() { _dirty = true; }
+let activeClass = null;                // which car class's racing line is shown
+let sections = [];
+let pending = { start: null, end: null, apex: null };
+let editIndex = null;                 // index being edited, or null when adding
+let cursor = 0;                       // distance in metres
+let VB = { w: 1, h: 1 };
+let pz = { k: 1, tx: 0, ty: 0 };      // pan/zoom of the scene group
+let sceneG = null;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const SVGNS = "http://www.w3.org/2000/svg";
+const svg = document.getElementById("map");
+const $ = id => document.getElementById(id);
+
+// World is X/Z metres. Flip X so the lap runs clockwise (real driving
+// direction), and negate Z so north is up in SVG (y grows downward).
+const sx = x => -x;
+const sy = z => -z;
+
+// Cosmetic display rotation (degrees), from the track's `orientation` field: a
+// turn applied to the whole top-down view so a circuit can be framed more
+// legibly without touching the recorded world coordinates. It is realised as an
+// SVG rotate() on the scene group (see applyTransform), so the tap/hit-test
+// maths — which works in the scene group's own child space — stays untouched;
+// only computeVB has to rotate the projected points to re-frame the bounds.
+let ORI = 0;
+function rotXY(X, Y) {                 // rotate a projected point by ORI about origin
+  if (!ORI) return [X, Y];             //   (matches SVG rotate(ORI) exactly)
+  const r = ORI * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+  return [X * c - Y * s, X * s + Y * c];
+}
+
+const LAYERS = [
+  { key: "surface", label: "Track surface", css: "--surface" },
+  { key: "left",    label: "Left edge",     css: "--left" },
+  { key: "right",   label: "Right edge",    css: "--right" },
+  { key: "race",    label: "Racing line",   css: "--race" },
+  { key: "sectors", label: "Sectors",       css: "--sector" },
+  { key: "sf",      label: "Start / finish",css: "--sf" },
+  { key: "pit",     label: "Pit lane",      css: "--pit" },
+  { key: "labels",  label: "Section labels",css: "--accent" },
+];
+const vis = Object.fromEntries(LAYERS.map(l => [l.key, true]));
+const LABEL_COLORS = ["#ff5db1","#59d3e6","#f5963f","#a78bfa","#58d980","#ffd24a","#ff8080"];
+
+// ---- geometry ----
+function total() { return (TRACK && TRACK.game_track_length_m) || 1; }
+function allPoints(t) {
+  return [...(t.left_edge||[]), ...(t.right_edge||[]), ...(t.racing_line||[]),
+          ...(t.pit_lane||[])];
+}
+function computeVB(t) {
+  const pts = allPoints(t);
+  // Frame the *rotated* projection (the scene group applies the same rotate),
+  // so the view stays fitted and centred at any orientation.
+  const P = pts.map(p => rotXY(sx(p[0]), sy(p[1])));
+  const X = P.map(q => q[0]), Y = P.map(q => q[1]);
+  const minx = Math.min(...X), maxx = Math.max(...X);
+  const miny = Math.min(...Y), maxy = Math.max(...Y);
+  const pad = 40;
+  VB = { w: maxx - minx, h: maxy - miny };
+  svg.setAttribute("viewBox",
+    `${minx-pad} ${miny-pad} ${VB.w+2*pad} ${VB.h+2*pad}`);
+}
+function posAtDistance(line, d, tot) {
+  if (!line || !line.length) return null;
+  const f = tot > 0 ? Math.min(Math.max(d/tot, 0), 1) : 0;
+  const idx = f * (line.length - 1);
+  const i = Math.floor(idx), t = idx - i;
+  const a = line[i], b = line[Math.min(i+1, line.length-1)];
+  return [a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t];
+}
+// A section is a forward arc from d0 to d1 in driving order; if d0 > d1 it wraps
+// across the start/finish line (e.g. the main straight). Returns the point list.
+function spanPoints(line, d0, d1, tot) {
+  const n = line.length;
+  const i0 = Math.max(0, Math.round(d0/tot*(n-1)));
+  const i1 = Math.min(n-1, Math.round(d1/tot*(n-1)));
+  if (d0 <= d1) return line.slice(i0, i1+1);
+  return [...line.slice(i0), ...line.slice(0, i1+1)];   // wrap through S/F
+}
+function spanLength(d0, d1, tot) { return d0 <= d1 ? d1 - d0 : (tot - d0) + d1; }
+function spanMid(d0, d1, tot) {
+  return d0 <= d1 ? (d0 + d1) / 2 : (d0 + spanLength(d0, d1, tot) / 2) % tot;
+}
+function wraps(m) { return m.start_m > m.end_m; }
+function inSpan(d, d0, d1, tot) { return d0 <= d1 ? (d>=d0 && d<=d1) : (d>=d0 || d<=d1); }
+function sectionLabel(m) { return m.name || (m.turn ? "T" + m.turn : (m.type || "?")); }
+function pathFrom(pts) {
+  return pts.map((p,i) => `${i?'L':'M'}${sx(p[0]).toFixed(1)},${sy(p[1]).toFixed(1)}`).join(" ");
+}
+// A smooth path through the points — a Catmull-Rom spline emitted as cubic
+// béziers — so the drawn lines read as smooth curves when you zoom in rather
+// than the straight-segment facets of the ~15 m station spacing. `closed` wraps
+// the ends (full-lap loops: edges, racing line); open paths (pit, section arcs)
+// clamp their end tangents. Only the *stroke* is smoothed — markers and the
+// cursor still ride the raw vertices via posAtDistance, so placement is exact.
+function smoothPath(pts, closed) {
+  const n = pts.length;
+  if (n < 3) return pathFrom(pts);
+  const X = pts.map(p => sx(p[0])), Y = pts.map(p => sy(p[1]));
+  const at = i => closed ? ((i % n) + n) % n : Math.max(0, Math.min(n - 1, i));
+  let d = `M${X[0].toFixed(1)},${Y[0].toFixed(1)}`;
+  const last = closed ? n : n - 1;
+  for (let i = 0; i < last; i++) {
+    const i0 = at(i - 1), i1 = at(i), i2 = at(i + 1), i3 = at(i + 2);
+    const c1x = X[i1] + (X[i2] - X[i0]) / 6, c1y = Y[i1] + (Y[i2] - Y[i0]) / 6;
+    const c2x = X[i2] - (X[i3] - X[i1]) / 6, c2y = Y[i2] - (Y[i3] - Y[i1]) / 6;
+    d += `C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ` +
+         `${X[i2].toFixed(1)},${Y[i2].toFixed(1)}`;
+  }
+  return d + (closed ? "Z" : "");
+}
+function cssv(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
+// Sector boundaries -> [0, b1, b2, ... , total]; regions numbered in driving order.
+function sectorRegions(t) {
+  const bs = (t.sectors||[]).map(s => s.lap_dist_m).filter(v => v>0).sort((a,b)=>a-b);
+  const edges = [0, ...bs, total()];
+  const out = [];
+  for (let i=0; i<edges.length-1; i++)
+    out.push({ n: i+1, start: edges[i], end: edges[i+1],
+               mid: (edges[i]+edges[i+1])/2 });
+  return out;
+}
+
+// ---- render ----
+function strokeScale() { return Math.max(VB.w, VB.h) / 500; }
+function add(tag, attrs) {
+  const el = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  (sceneG || svg).appendChild(el); return el;
+}
+function applyTransform() {
+  // rotate(ORI) is innermost (applied first, in world/child space); pan+zoom
+  // wrap it. getScreenCTM() therefore carries the rotation, so every hit-test
+  // that back-projects through it needs no change.
+  if (sceneG) sceneG.setAttribute("transform",
+    `translate(${pz.tx} ${pz.ty}) scale(${pz.k}) rotate(${ORI})`);
+}
+function clientToScene(cx, cy) {
+  const pt = svg.createSVGPoint(); pt.x = cx; pt.y = cy;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+let rafPending = false;
+function scheduleRender() {           // coalesce rapid zoom events to one/frame
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => { rafPending = false; render(); });
+}
+function zoomAt(factor, P) {
+  const nk = clamp(pz.k * factor, 1, 40), f = nk / pz.k;
+  pz.tx = P.x - f * (P.x - pz.tx);
+  pz.ty = P.y - f * (P.y - pz.ty);
+  pz.k = nk; scheduleRender();   // re-render so marker/label sizes track the zoom
+}
+function resetView() { pz = { k: 1, tx: 0, ty: 0 }; render(); }
+function dot(p, r, fill, stroke, sw) {
+  add("circle", { cx: sx(p[0]), cy: sy(p[1]), r, fill, stroke, "stroke-width": sw }); }
+function label(p, s, col, size, dx) {
+  const x = sx(p[0])+dx, y = sy(p[1])-dx*0.4;
+  const attrs = { x, y, fill: col,
+    "font-size": size, "font-family": "var(--mono)", "paint-order": "stroke",
+    stroke: "var(--bg)", "stroke-width": size*0.18 };
+  // The scene group is rotated by ORI (see applyTransform), which would turn the
+  // text with it — corner/straight names go sideways or upside-down. Counter-
+  // rotate each label by -ORI about its own anchor so it rides to the rotated
+  // position but stays upright and readable. (Direction markers are meant to
+  // rotate, so only text is cancelled.)
+  if (ORI) attrs.transform = `rotate(${-ORI} ${x} ${y})`;
+  const t = add("text", attrs); t.textContent = s; }
+
+function render() {
+  if (!TRACK) return;
+  // Divide by the zoom so dots, labels and line widths stay a constant *screen*
+  // size as you zoom — the track detail grows, the markers don't (so you can
+  // place an apex precisely).
+  const t = TRACK, tot = total(), s = strokeScale() / pz.k;
+  // Reuse a persistent sceneG rather than recreating it each render. A brand-new
+  // <g> has no reliable getScreenCTM() until the next layout/paint, so a tap
+  // immediately after a render (e.g. just after adding a section, which re-renders)
+  // would hit a null CTM in handleTap. Keeping the same element and only clearing
+  // its children preserves a valid CTM.
+  if (!sceneG || sceneG.parentNode !== svg) {
+    svg.textContent = "";
+    sceneG = document.createElementNS(SVGNS, "g");
+    svg.appendChild(sceneG);
+  } else {
+    sceneG.textContent = "";   // clear children, keep the laid-out element
+  }
+
+  if (vis.surface && t.left_edge.length && t.right_edge.length) {
+    const ring = [...t.left_edge, ...[...t.right_edge].reverse()];
+    add("path", { d: smoothPath(ring, true), fill: cssv("--surface"), stroke: "none" });
+  }
+  if (vis.left)  add("path", { d: smoothPath(t.left_edge, true),  fill:"none", stroke: cssv("--left"),  "stroke-width": 2*s });
+  if (vis.right) add("path", { d: smoothPath(t.right_edge, true), fill:"none", stroke: cssv("--right"), "stroke-width": 2*s });
+  if (vis.race)  add("path", { d: smoothPath(t.racing_line, true),fill:"none", stroke: cssv("--race"),  "stroke-width": 2.5*s, "stroke-opacity": .95 });
+  if (vis.pit && t.pit_lane.length)
+    add("path", { d: smoothPath(t.pit_lane, false), fill:"none", stroke: cssv("--pit"), "stroke-width": 3*s, "stroke-dasharray": `${6*s} ${4*s}` });
+
+  if (vis.labels) sections.forEach((m, k) => {
+    const seg = spanPoints(t.racing_line, m.start_m, m.end_m, tot);
+    const col = LABEL_COLORS[k % LABEL_COLORS.length];
+    const editing = (k === editIndex);
+    add("path", { d: smoothPath(seg, false), fill:"none", stroke: col,
+      "stroke-width": (editing ? 9 : 6)*s,
+      "stroke-opacity": editing ? .7 : .45, "stroke-linecap": "round" });
+    const mid = posAtDistance(t.racing_line, spanMid(m.start_m, m.end_m, tot), tot);
+    if (mid) label(mid, sectionLabel(m), col, 16*s, 0);
+    if (m.apex_m != null) {
+      const ap = posAtDistance(t.racing_line, m.apex_m, tot);
+      if (ap) diamond(ap, 5*s, col, cssv("--bg"), 1.5*s);
+    }
+  });
+
+  if (vis.sectors) {
+    sectorRegions(t).forEach(r => {
+      const mid = posAtDistance(t.racing_line, r.mid, tot);
+      if (mid) label(mid, "S" + r.n, cssv("--sector"), 15*s, 0);
+    });
+    (t.sectors||[]).forEach(sec => {
+      const p = posAtDistance(t.racing_line, sec.lap_dist_m, tot) || sec.pos;
+      dot(p, 4*s, cssv("--sector"), cssv("--bg"), 1.5*s);
+    });
+  }
+
+  if (vis.sf && t.sf_line && t.sf_line.pos) {
+    dot(t.sf_line.pos, 6*s, "none", cssv("--sf"), 2.5*s);
+    label(t.sf_line.pos, "S/F", cssv("--sf"), 14*s, 10*s);
+  }
+
+  const cp = posAtDistance(t.racing_line, cursor, tot);
+  if (cp) dot(cp, 6*s, cssv("--accent"), cssv("--bg"), 1.5*s);
+  if (pending.start != null) marker(pending.start, cssv("--race"), s);
+  if (pending.end != null)   marker(pending.end, cssv("--right"), s);
+  if (pending.apex != null) {
+    const ap = posAtDistance(t.racing_line, pending.apex, tot);
+    if (ap) diamond(ap, 9*s, "none", cssv("--accent"), 2.5*s);
+  }
+  applyTransform();
+}
+function marker(d, col, s) {
+  const p = posAtDistance(TRACK.racing_line, d, total()); if (!p) return;
+  // A hollow ring, drawn larger than the cursor dot so it stays visible even
+  // when start/end sit exactly on the cursor position.
+  dot(p, 9*s, "none", col, 2.5*s);
+}
+function diamond(p, r, fill, stroke, sw) {
+  const x = sx(p[0]), y = sy(p[1]);
+  add("path", { d: `M${x},${y-r} L${x+r},${y} L${x},${y+r} L${x-r},${y} Z`,
+    fill, stroke, "stroke-width": sw });
+}
+
+// ---- UI ----
+function fmt(n) { return Math.round(n).toLocaleString(); }
+function chips() {
+  const t = TRACK;
+  const c = [
+    ["Game", (t.game||"").toUpperCase()],
+    ["Class", activeClass || "—"],
+    ["Classes", Object.keys(t.lines || {}).length || "—"],
+    ["Length", fmt(t.game_track_length_m) + " m"],
+    ["Racing-line laps", t.racing_attempts ?? "—"],
+    ["Sectors", (t.sectors||[]).length + 1],
+  ];
+  $("chips").innerHTML = c.map(([k,v]) => `<span class="chip">${k} <b>${v}</b></span>`).join("");
+  $("tname").textContent = t.track || "Untitled";
+}
+function buildLayers() {
+  const host = $("layers"); host.innerHTML = "";
+  LAYERS.forEach(l => {
+    const dis = (l.key === "pit" && !TRACK.pit_lane.length);
+    const row = document.createElement("label"); row.className = "layer";
+    row.innerHTML = `<input type="checkbox" ${vis[l.key]?"checked":""} ${dis?"disabled":""}>
+      <span class="sw" style="background:${cssv(l.css)}"></span>
+      <span style="${dis?'color:var(--dim)':''}">${l.label}${dis?' — none':''}</span>`;
+    row.querySelector("input").addEventListener("change", e => { vis[l.key] = e.target.checked; render(); });
+    host.appendChild(row);
+  });
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c =>
+  ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c])); }
+function renderMarks() {
+  const host = $("marks");
+  $("count").textContent = sections.length ? `(${sections.length})` : "";
+  if (!sections.length) {
+    host.innerHTML = `<li class="none">No sections yet — scrub, set start &amp; end, then Add.</li>`;
+    return;
+  }
+  host.innerHTML = "";
+  sections.forEach((m, k) => {
+    const li = document.createElement("li");
+    li.className = "mk" + (k === editIndex ? " editing" : "");
+    li.style.borderLeftColor = LABEL_COLORS[k % LABEL_COLORS.length];
+    const rng = wraps(m) ? `${fmt(m.start_m)} → ${fmt(m.end_m)} m ↻`
+                         : `${fmt(m.start_m)}–${fmt(m.end_m)} m`;
+    const tn = m.turn ? `<span class="tn">T${esc(m.turn)}</span>` : "";
+    const nm = m.name ? esc(m.name) : (m.turn ? "" : "(unnamed)");
+    const meta = [];
+    if (m.apex_m != null) meta.push(`<span class="meta">apex ${fmt(m.apex_m)}m</span>`);
+    if (m.severity) meta.push(`<span class="meta sev-${esc(m.severity)}">${esc(m.severity)}</span>`);
+    if (m.overtake === "yes") meta.push(`<span class="meta ot">overtake</span>`);
+    else if (m.overtake === "no") meta.push(`<span class="meta">no overtake</span>`);
+    li.innerHTML =
+      `<div class="top">${tn}<span class="nm">${nm}</span>` +
+      `<span class="type">${esc(m.type)}</span>` +
+      `<button class="del" title="Delete section" aria-label="Delete section">×</button></div>` +
+      `<div class="bot"><span class="rng">${rng}</span>${meta.join("")}</div>`;
+    onTap(li.querySelector(".del"), e => {
+      e.stopPropagation();
+      sections.splice(k, 1);
+      markDirty();
+      if (editIndex === k) resetForm(); else if (editIndex > k) editIndex--;
+      renderMarks(); render();
+    });
+    onTap(li, () => editSection(k));
+    host.appendChild(li);
+  });
+}
+function setCursorText() {
+  $("distv").textContent = fmt(cursor);
+  $("pctv").textContent = `· ${(cursor/total()*100).toFixed(0)}% of lap`;
+}
+function updateDist() { setCursorText(); render(); }
+function refreshPending() {
+  const f = v => v==null ? "—" : fmt(v)+" m";
+  let s = `start ${f(pending.start)} · end ${f(pending.end)}`;
+  if (pending.apex != null) s += ` · apex ${f(pending.apex)}`;
+  $("pending").textContent = s;
+}
+function setEnabled(on) {
+  ["scrub","nudgeDown","nudgeUp","setStart","setEnd","setApex","clearSel","turn","name",
+   "type","members","severity","overtake","add","download","copy"]
+    .forEach(id => $(id).disabled = !on);
+}
+function nudge(d) {
+  if (!TRACK) return;
+  cursor = clamp(cursor + d, 0, total());
+  $("scrub").value = Math.round(cursor);
+  updateDist();
+}
+function clearSelection() { pending = { start:null, end:null, apex:null }; refreshPending(); render(); }
+
+// Show only the fields that make sense for the chosen type:
+//   corner    — Turn #, Apex, Gear, Severity, Overtake
+//   straight  — Overtake (+ Name)
+//   chicane / complex — Members (they group other corners by turn number)
+//   other     — Name only
+function updateFormFields() {
+  const type = $("type").value;
+  const isCorner  = type === "corner";
+  const grouping  = type === "chicane" || type === "complex";
+  $("turn").hidden       = !isCorner;
+  $("setApex").hidden    = !isCorner;
+  $("severity").hidden   = !isCorner;
+  $("overtake").hidden   = !(isCorner || type === "straight");
+  // Hide the whole severity/overtake row when neither applies.
+  $("metaRow").hidden    = !(isCorner || type === "straight");
+  $("membersRow").hidden = !grouping;
+}
+function readForm() {
+  // Only read fields that apply to the type, so a value left over from another
+  // type (e.g. a severity set while it was a corner, then switched to straight)
+  // never leaks into the saved section.
+  const type = $("type").value;
+  const isCorner = type === "corner";
+  const grouping = type === "chicane" || type === "complex";
+  return {
+    turn: isCorner ? $("turn").value.trim() : "",
+    name: $("name").value.trim(),
+    type,
+    start_m: pending.start != null ? Math.round(pending.start) : null,
+    end_m:   pending.end   != null ? Math.round(pending.end)   : null,
+    apex_m:  isCorner && pending.apex != null ? Math.round(pending.apex) : null,
+    severity: isCorner ? $("severity").value : "",
+    overtake: (isCorner || type === "straight") ? $("overtake").value : "",
+    members: grouping
+      ? $("members").value.split(",").map(s => s.trim()).filter(Boolean)
+      : [],
+  };
+}
+function resetForm() {
+  editIndex = null;
+  pending = { start:null, end:null, apex:null };
+  ["turn","name","severity","overtake","members"].forEach(id => $(id).value = "");
+  $("type").value = "corner";
+  $("formTitle").textContent = "Add a section";
+  $("add").textContent = "Add section";
+  $("cancelEdit").hidden = true;
+  updateFormFields(); refreshPending(); renderMarks(); render();
+}
+function editSection(k) {
+  const m = sections[k];
+  editIndex = k;
+  pending = { start: m.start_m, end: m.end_m, apex: (m.apex_m != null ? m.apex_m : null) };
+  $("turn").value = m.turn || "";
+  $("name").value = m.name || "";
+  $("type").value = m.type || "corner";
+  $("severity").value = m.severity || "";
+  $("overtake").value = m.overtake || "";
+  $("members").value = (m.members || []).join(", ");
+  $("formTitle").textContent = "Edit section";
+  $("add").textContent = "Update section";
+  $("cancelEdit").hidden = false;
+  updateFormFields(); refreshPending(); renderMarks(); render();
+  $("formTitle").scrollIntoView({ block: "nearest" });
+}
+const _VALIDATED_IDS = ["turn", "name", "members", "pending"];
+function clearInvalid() {
+  _VALIDATED_IDS.forEach(id => { const el = $(id); if (el) el.classList.remove("invalid"); });
+}
+function invalid(id, msg) {
+  flash(msg);
+  const el = $(id);
+  if (el) {
+    el.classList.add("invalid");
+    if (el.focus) try { el.focus(); } catch (_) {}
+    el.scrollIntoView && el.scrollIntoView({ block: "nearest" });
+  }
+  return false;   // so callers can `return invalid(...)`
+}
+// Clear a field's red flag the moment it's edited.
+["turn", "name", "members"].forEach(id =>
+  $(id).addEventListener("input", () => $(id).classList.remove("invalid")));
+
+function submitSection() {
+  clearInvalid();
+  const m = readForm();
+  // Span first — every type needs a start and an end (the #pending chip shows it).
+  if (m.start_m == null || m.end_m == null) return invalid("pending", "Set a start and an end first");
+  if (m.start_m === m.end_m) return invalid("pending", "Start and end are the same point");
+  if (m.apex_m != null && !inSpan(m.apex_m, m.start_m, m.end_m, total()))
+    return invalid("pending", "Apex must sit within the section");
+  // Type-specific required fields.
+  if (m.type === "corner") {
+    if (!m.turn && !m.name) return invalid("turn", "Give the corner a turn number or a name");
+  } else if (m.type === "chicane" || m.type === "complex") {
+    if (!m.name) return invalid("name", "Name this " + m.type);
+    // A complex is defined by the corners it groups; a chicane may list them
+    // but a bare named chicane (e.g. "Bus Stop") is fine.
+    if (m.type === "complex" && !m.members.length)
+      return invalid("members", "List the turns this complex groups");
+  } else {   // straight, other
+    if (!m.name) return invalid("name", "Name this " + m.type);
+  }
+  if (editIndex == null) sections.push(m); else sections[editIndex] = m;
+  sections.sort((x, y) => x.start_m - y.start_m);
+  markDirty();
+  resetForm();
+}
+function hudBase() {
+  const t = TRACK;
+  const touch = window.matchMedia("(pointer: coarse)").matches;
+  const zoom = touch ? "pinch to zoom · double-tap to fit" : "scroll to zoom";
+  return `${t.left_edge.length} pts/line · ~${estWidth()} m wide · ${zoom} · drag to pan · tap the track to place the cursor · drag a dot to move it`;
+}
+function estWidth() {
+  const l = TRACK.left_edge, r = TRACK.right_edge;
+  if (!l.length || l.length !== r.length) return "?";
+  let s=0,n=0; for (let i=0;i<l.length;i+=40){ s+=Math.hypot(l[i][0]-r[i][0], l[i][1]-r[i][1]); n++; }
+  return (s/n).toFixed(1);
+}
+let flashTimer;
+function flash(msg) {
+  const hud = $("hud"); hud.hidden = false; hud.textContent = msg;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { if (TRACK) hud.textContent = hudBase(); }, 1900);
+}
+
+// Normalise a raw section from the track file to the internal working shape.
+function normSection(s) {
+  return {
+    turn: s.turn != null ? String(s.turn) : "",
+    name: s.name || "",
+    type: s.type || "other",
+    start_m: Math.round(s.start_m), end_m: Math.round(s.end_m),
+    apex_m: s.apex_m != null ? Math.round(s.apex_m) : null,
+    severity: s.severity || "", overtake: s.overtake || "",
+    members: Array.isArray(s.members) ? s.members.map(String) : [],
+  };
+}
+
+// Racing lines are per car class under `lines`.
+function ensureLines(t) {
+  if (!t.lines || typeof t.lines !== "object") t.lines = {};
+  return t;
+}
+// Point TRACK.racing_line/racing_attempts at the active class so all the
+// rendering code keeps reading t.racing_line unchanged.
+function applyActiveLine() {
+  const e = (activeClass && TRACK.lines[activeClass]) || {};
+  TRACK.racing_line = e.racing_line || [];
+  TRACK.racing_attempts = e.racing_attempts || 0;
+}
+function fillClassSel() {
+  const cls = Object.keys(TRACK.lines);
+  const sel = $("classSel");
+  sel.innerHTML = cls.length
+    ? cls.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("")
+    : `<option value="">— no racing line —</option>`;
+  sel.value = activeClass || "";
+  $("clssec").hidden = cls.length < 1;
+  $("classSel").disabled = cls.length < 2;   // nothing to switch if only one
+}
+
+function loadTrack(t) {
+  ensureLines(t);
+  ["left_edge","right_edge","pit_lane","sectors"].forEach(k => t[k] = t[k]||[]);
+  TRACK = t;
+  ORI = Number(t.orientation) || 0;
+  activeClass = Object.keys(t.lines)[0] || null;
+  applyActiveLine();
+  // Sections now live inside the track JSON. Load any that are already there.
+  sections = (Array.isArray(t.sections) ? t.sections : [])
+    .map(normSection).filter(s => Number.isFinite(s.start_m) && Number.isFinite(s.end_m));
+  sections.sort((a, b) => a.start_m - b.start_m);
+  cursor = 0; pz = { k: 1, tx: 0, ty: 0 };
+  $("empty").hidden = true; $("hud").hidden = false; $("mapctl").hidden = false;
+  $("scrub").max = Math.round(total()); $("scrub").value = 0;
+  fillClassSel();
+  $("notessec").hidden = false; $("notesdiv").hidden = false;
+  $("notes").value = t.notes || "";
+  $("clsNotes").value = (activeClass && t.lines[activeClass] && t.lines[activeClass].notes) || "";
+  $("oriRange").value = ORI; $("oriNum").value = ORI;
+  computeVB(t); chips(); buildLayers(); setEnabled(true);
+  resetForm();                 // clears the form + selection and renders
+  updateDist(); $("hud").textContent = hudBase();
+  _dirty = false;              // a freshly loaded track has no unsaved edits
+}
+
+$("classSel").addEventListener("change", e => {
+  activeClass = e.target.value || null;
+  applyActiveLine();
+  $("clsNotes").value = (activeClass && TRACK.lines[activeClass] && TRACK.lines[activeClass].notes) || "";
+  $("scrub").max = Math.round(total()); if (cursor > total()) cursor = 0;
+  chips(); buildLayers(); render(); updateDist();
+});
+$("notes").addEventListener("input", e => { if (TRACK) { TRACK.notes = e.target.value; markDirty(); } });
+
+// Map orientation — a cosmetic rotation of the whole view (see ORI). Updating it
+// re-frames the bounds (computeVB) and re-fits (resetView), and writes the value
+// onto the track so it exports and every other view (Pi + web + companion) picks
+// it up. Kept in [0,360).
+function setOrientation(deg, { fromInput } = {}) {
+  if (!TRACK) return;
+  ORI = ((Math.round(Number(deg) || 0) % 360) + 360) % 360;
+  TRACK.orientation = ORI;
+  if (fromInput !== "range") $("oriRange").value = ORI;
+  if (fromInput !== "num")   $("oriNum").value = ORI;
+  computeVB(TRACK); resetView(); markDirty();
+}
+$("oriRange").addEventListener("input", e => setOrientation(e.target.value, { fromInput: "range" }));
+$("oriNum").addEventListener("input",   e => setOrientation(e.target.value, { fromInput: "num" }));
+onTap($("oriL90"),  () => setOrientation(ORI - 90));
+onTap($("oriR90"),  () => setOrientation(ORI + 90));
+onTap($("oriReset"), () => setOrientation(0));
+$("clsNotes").addEventListener("input", e => {
+  if (TRACK && activeClass && TRACK.lines[activeClass]) {
+    TRACK.lines[activeClass].notes = e.target.value; markDirty();
+  }
+});
+
+// events
+// iOS WKWebView only synthesises `click` for a near-instant tap — a press that
+// dwells ~50ms fires pointerdown+pointerup but NO click (proven in the
+// interaction log), so click-bound buttons silently did nothing. `pointerup`
+// fires reliably, so activate on that instead: armed on the element's
+// pointerdown, fired on its pointerup (touch gets implicit pointer capture, so
+// the pointerup lands on the same element even if the finger drifts). Mouse
+// fires pointer events too, so desktop is unaffected.
+//
+// A tap must NOT fire when the finger is scrolling: touch gets implicit pointer
+// capture, so a drag that starts on a list row keeps sending pointermove +
+// pointerup to that row even as the page scrolls — without a movement guard the
+// pointerup reads as a tap (this made the sections list open+auto-scroll a row
+// mid-scroll, so you could never reach the last one). So disarm once the finger
+// travels past a small threshold; a genuine tap barely moves.
+function onTap(el, fn) {
+  if (!el) return;
+  const MOVE = 10;                 // px of travel that counts as a scroll, not a tap
+  let armed = false, sx = 0, sy = 0;
+  el.addEventListener("pointerdown", e => { armed = true; sx = e.clientX; sy = e.clientY; });
+  el.addEventListener("pointercancel", () => { armed = false; });
+  el.addEventListener("pointermove", e => {
+    if (armed && (Math.abs(e.clientX - sx) > MOVE || Math.abs(e.clientY - sy) > MOVE))
+      armed = false;               // finger travelled — it's a scroll, cancel the tap
+  });
+  el.addEventListener("pointerup", e => { if (armed) { armed = false; fn(e); } });
+}
+$("scrub").addEventListener("input", e => { cursor = +e.target.value; updateDist(); });
+onTap($("setStart"), () => {
+  pending.start = cursor; refreshPending(); render(); flash("Start set · " + fmt(cursor) + " m"); });
+onTap($("setEnd"), () => {
+  pending.end = cursor; refreshPending(); render(); flash("End set · " + fmt(cursor) + " m"); });
+onTap($("setApex"), () => {
+  pending.apex = cursor; refreshPending(); render(); flash("Apex set · " + fmt(cursor) + " m"); });
+onTap($("clearSel"), clearSelection);
+$("type").addEventListener("change", updateFormFields);
+// Fine adjust: click nudges 1 m; press-and-hold repeats.
+function holdRepeat(btn, d) {
+  let delay, timer, lastDown = 0;
+  const touchDev = window.matchMedia("(pointer: coarse)").matches;
+  const stop = () => { clearTimeout(delay); clearInterval(timer); delay = timer = null; };
+  btn.addEventListener("pointerdown", e => {
+    // One physical tap must nudge exactly once. iOS WKWebView can deliver a
+    // duplicate pointerdown for the same tap — a compat-mouse ghost, or a
+    // second touch pointerdown before the finger lifts — which would nudge
+    // twice (the "moves 2 m" bug). Ignore the mouse ghost on a touch device,
+    // and debounce a near-simultaneous duplicate. NB: no `active` latch — a
+    // dropped pointerup (iOS WKWebView, after the re-render adding a section
+    // triggers) would leave it stuck true and the button permanently dead.
+    if (touchDev && e.pointerType === "mouse") return;
+    const now = Date.now();
+    if (now - lastDown < 80) return;
+    lastDown = now;
+    stop();                            // clear any stray repeat from a missed release
+    e.preventDefault(); nudge(d);
+    delay = setTimeout(() => { timer = setInterval(() => nudge(d), 80); }, 350);
+  });
+  ["pointerup","pointerleave","pointercancel"].forEach(ev => btn.addEventListener(ev, stop));
+  // Safety net for a release the button never sees (dropped by the WebView, or
+  // the finger lifted off the button): any release anywhere stops the repeat,
+  // so it can never run away or leave the button wedged.
+  ["pointerup","pointercancel","touchend","touchcancel"].forEach(
+    ev => window.addEventListener(ev, stop));
+}
+holdRepeat($("nudgeDown"), -1);
+holdRepeat($("nudgeUp"), +1);
+onTap($("add"), submitSection);
+onTap($("cancelEdit"), resetForm);
+
+function cleanSection(m) {
+  const o = {};
+  if (m.turn) o.turn = m.turn;
+  if (m.name) o.name = m.name;
+  o.type = m.type; o.start_m = m.start_m; o.end_m = m.end_m;
+  if (m.apex_m != null) o.apex_m = m.apex_m;
+  if (m.severity) o.severity = m.severity;
+  if (m.overtake) o.overtake = m.overtake;
+  if (m.type === "complex" && (m.members || []).length) o.members = m.members.slice();
+  return o;
+}
+function exportObj() {
+  // Write the whole track back out (shared geometry + per-class lines + notes +
+  // sections), so it round-trips and can be PUT to /tracks.
+  const t = TRACK;
+  // Provenance is carried through untouched — created + author are not
+  // editable here (though the raw JSON always is); updated is bumped because
+  // exporting is a save. Absent stamps stay absent.
+  const nowIso = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  return {
+    format_version: 1,
+    game: t.game || "",
+    track: t.track || "",
+    game_track_length_m: t.game_track_length_m || 0,
+    notes: t.notes || "",
+    orientation: Math.round((Number(ORI) || 0) * 100) / 100,
+    created: t.created || "",
+    updated: nowIso,
+    author: t.author || "",
+    left_edge: t.left_edge || [],
+    right_edge: t.right_edge || [],
+    pit_lane: t.pit_lane || [],
+    sf_line: t.sf_line || {},
+    sectors: t.sectors || [],
+    lines: t.lines || {},
+    sections: sections.map(cleanSection),
+  };
+}
+function exportName() {
+  const slug = s => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const track = slug(TRACK.track || "track");
+  return (TRACK.game ? `${slug(TRACK.game)}_${track}` : track) + ".json";
+}
+
+// Host bridge — lets a native WebView (the companion app) drive load/save
+// without the file-input/download plumbing. Harmless in a plain browser:
+// nothing calls it there, and the file still opens/downloads normally.
+window.SHFONIC = {
+  load:      txt => { loadTrack(JSON.parse(txt)); flash("Loaded " + (TRACK.track || "track")); },
+  export:    ()  => JSON.stringify(exportObj(), null, 2),
+  filename:  ()  => exportName(),
+  isDirty:   ()  => _dirty,
+  markSaved: ()  => { _dirty = false; },   // host wrote the file — no longer dirty
+  embed:     ()  => document.body.classList.add("embedded"),  // hide open/save controls
+  // Apply the app's appearance + font-size settings. mode is "light"/"dark";
+  // scale is the font multiplier (1 = default). Colours come from the CSS
+  // variables, so re-render so the SVG map re-reads them via cssv().
+  setTheme:  (mode, scale) => {
+    const root = document.documentElement;
+    if (mode === "light") root.setAttribute("data-theme", "light");
+    else root.removeAttribute("data-theme");
+    const s = Number(scale);
+    root.style.setProperty("--fscale", (isFinite(s) && s > 0) ? s : 1);
+    if (typeof TRACK !== "undefined" && TRACK) render();
+  },
+};
+$("copy").addEventListener("click", async () => {
+  const json = JSON.stringify(exportObj(), null, 2);
+  try { await navigator.clipboard.writeText(json); flash("Sections JSON copied"); }
+  catch { flash("Copy blocked — use Download instead"); }
+});
+$("download").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(exportObj(), null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = exportName();
+  a.click(); URL.revokeObjectURL(url);
+});
+$("file").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try { loadTrack(JSON.parse(r.result)); flash("Loaded " + (TRACK.track || f.name)); }
+    catch { flash("That file isn't a valid track JSON"); }
+  };
+  r.readAsText(f); e.target.value = "";
+});
+$("openBig").addEventListener("click", () => $("file").click());
+$("openSmall").addEventListener("click", () => $("file").click());
+
+// Layers group is collapsed by default on phones (little room); open on desktop.
+if (!window.matchMedia("(max-width: 760px)").matches) {
+  const d = $("layersDet"); if (d) d.open = true;
+}
+
+// Keyboard-aware focus (phones): the on-screen keyboard covers the lower part of
+// the screen, so when a text field is focused shift the whole editor up just far
+// enough that the field clears the keyboard (the map stays visible). visualViewport
+// reports the area still visible above the keyboard.
+function isTextField(el) {
+  if (!el) return false;
+  if (el.tagName === "TEXTAREA") return true;
+  return el.tagName === "INPUT" && (el.type || "text") === "text";
+}
+let kbField = null;
+function applyKbShift() {
+  if (!kbField) return;
+  document.body.style.setProperty("--kbshift", "0px");    // measure un-shifted
+  const vv = window.visualViewport;
+  const visH = vv ? vv.height : window.innerHeight;        // visible above keyboard
+  const overlap = kbField.getBoundingClientRect().bottom - (visH - 14);
+  document.body.style.setProperty("--kbshift", (overlap > 0 ? -overlap : 0) + "px");
+}
+document.addEventListener("focusin", e => {
+  if (!isTextField(e.target)) return;
+  kbField = e.target;
+  document.body.classList.add("kbd");
+  setTimeout(applyKbShift, 250);   // wait for the keyboard to animate in
+});
+document.addEventListener("focusout", e => {
+  if (!isTextField(e.target)) return;
+  kbField = null;
+  document.body.classList.remove("kbd");
+  document.body.style.setProperty("--kbshift", "0px");
+});
+if (window.visualViewport) window.visualViewport.addEventListener("resize", applyKbShift);
+
+// pan + zoom
+svg.addEventListener("wheel", e => {
+  if (!TRACK) return;
+  e.preventDefault();
+  zoomAt(e.deltaY < 0 ? 1.15 : 1/1.15, clientToScene(e.clientX, e.clientY));
+}, { passive: false });
+let drag = null, dragMarker = null, downClient = null, moved = false;
+// Screen<->scene helpers (sceneG's CTM includes the pan/zoom transform).
+function sceneLocal(cx, cy) {
+  const pt = svg.createSVGPoint(); pt.x = cx; pt.y = cy;
+  return pt.matrixTransform(sceneG.getScreenCTM().inverse());
+}
+// Which pending marker (if any) is under the pointer — within a grab radius.
+function hitMarker(cx, cy) {
+  if (!sceneG || !TRACK) return null;
+  const ctm = sceneG.getScreenCTM(); if (!ctm) return null;
+  let found = null, fd = 24;   // px grab radius (finger-friendly)
+  for (const m of ["start", "end", "apex"]) {
+    if (pending[m] == null) continue;
+    const wp = posAtDistance(TRACK.racing_line, pending[m], total()); if (!wp) continue;
+    const pt = svg.createSVGPoint(); pt.x = sx(wp[0]); pt.y = sy(wp[1]);
+    const sp = pt.matrixTransform(ctm);
+    const d = Math.hypot(sp.x - cx, sp.y - cy);
+    if (d < fd) { fd = d; found = m; }
+  }
+  if (found) return found;
+  // The cursor (main marker) — lower priority than pending dots if they overlap.
+  const cp = posAtDistance(TRACK.racing_line, cursor, total());
+  if (cp) {
+    const pt = svg.createSVGPoint(); pt.x = sx(cp[0]); pt.y = sy(cp[1]);
+    const sp = pt.matrixTransform(ctm);
+    if (Math.hypot(sp.x - cx, sp.y - cy) < 24) return "cursor";
+  }
+  return null;
+}
+// Distance of the racing-line point nearest the pointer (markers ride the line).
+function nearestDistance(cx, cy) {
+  const p = sceneLocal(cx, cy), line = TRACK.racing_line, n = line.length;
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < n; i++) {
+    const dx = sx(line[i][0]) - p.x, dy = sy(line[i][1]) - p.y, d = dx*dx + dy*dy;
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best / (n - 1) * total();
+}
+// A tap on (or near) the track jumps the cursor to the closest racing-line point.
+function handleTap(cx, cy) {
+  const p = sceneLocal(cx, cy), line = TRACK.racing_line, n = line.length;
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < n; i++) {
+    const dx = sx(line[i][0]) - p.x, dy = sy(line[i][1]) - p.y, d = dx*dx + dy*dy;
+    if (d < bd) { bd = d; best = i; }
+  }
+  const wp = line[best], pt = svg.createSVGPoint(); pt.x = sx(wp[0]); pt.y = sy(wp[1]);
+  const ctm = sceneG.getScreenCTM();
+  if (!ctm) return;                                    // scene not laid out yet — ignore this tap
+  const sp = pt.matrixTransform(ctm);
+  if (Math.hypot(sp.x - cx, sp.y - cy) > 52) return;   // tapped away from the track — ignore
+  cursor = Math.round(best / (n - 1) * total());
+  $("scrub").value = cursor; updateDist();
+}
+// Multi-touch: one finger pans / taps the track / drags a dot; two fingers
+// pinch-zoom (and pan together). All input arrives as pointer events because
+// the SVG sets touch-action:none, so the browser never scrolls or zooms itself.
+const pointers = new Map();
+let pinchPrev = null;
+function pinchState() {
+  const p = [...pointers.values()], a = p[0], b = p[1];
+  return { dist: Math.hypot(a.x - b.x, a.y - b.y),
+           mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+}
+// A missed pointerup (e.g. an interrupted gesture on iOS) can leave a phantom
+// finger in the map, after which every single tap looks like a 2-finger pinch
+// and tap-to-place-cursor silently stops working. Drop anything not touched in
+// the last moment before starting a fresh gesture.
+function purgeStale() {
+  const now = Date.now();
+  for (const [id, p] of pointers) if (now - p.t > 1500) pointers.delete(id);
+  if (pointers.size < 2) pinchPrev = null;
+}
+svg.addEventListener("pointerdown", e => {
+  if (!TRACK) return;
+  purgeStale();
+  // NB: deliberately no setPointerCapture. `svg { touch-action: none }` already
+  // stops the browser scrolling/zooming during a gesture, so capture only buys
+  // events when the finger leaves the SVG mid-drag — not worth it, because on
+  // iOS WKWebView a leaked capture (missed pointerup after a re-render, reused
+  // pointer id) redirects every later tap into the SVG, so Add/Clear and the
+  // other buttons go dead. Without capture, a tap on a button always reaches
+  // the button.
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, t: Date.now() });
+  if (pointers.size === 2) {                    // second finger down → pinch
+    drag = null; dragMarker = null; downClient = null;
+    pinchPrev = pinchState(); svg.classList.add("grabbing");
+    return;
+  }
+  if (pointers.size > 2) return;
+  svg.classList.add("grabbing");
+  const m = hitMarker(e.clientX, e.clientY);
+  if (m) { dragMarker = m; return; }            // grab a cursor/start/end/apex dot
+  drag = clientToScene(e.clientX, e.clientY);    // otherwise pan (or, if no move, a tap)
+  downClient = { x: e.clientX, y: e.clientY }; moved = false;
+});
+svg.addEventListener("pointermove", e => {
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, t: Date.now() });
+  if (pointers.size >= 2) {                      // pinch-zoom about the midpoint
+    const s = pinchState();
+    if (pinchPrev && s.dist > 0 && pinchPrev.dist > 0) {
+      const P = clientToScene(s.mx, s.my), prevP = clientToScene(pinchPrev.mx, pinchPrev.my);
+      pz.tx += P.x - prevP.x; pz.ty += P.y - prevP.y;   // follow the fingers
+      zoomAt(s.dist / pinchPrev.dist, P);               // scale, keeping midpoint fixed
+    }
+    pinchPrev = s; return;
+  }
+  if (dragMarker) {
+    const d = Math.round(nearestDistance(e.clientX, e.clientY));
+    if (dragMarker === "cursor") { cursor = d; $("scrub").value = d; setCursorText(); }
+    else { pending[dragMarker] = d; refreshPending(); }
+    scheduleRender(); return;
+  }
+  if (drag) {
+    if (downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) > 4) moved = true;
+    const p = clientToScene(e.clientX, e.clientY);
+    pz.tx += p.x - drag.x; pz.ty += p.y - drag.y;
+    drag = p; applyTransform(); return;
+  }
+  svg.style.cursor = hitMarker(e.clientX, e.clientY) ? "move" : "";  // hover hint
+});
+function endDrag() {
+  drag = null; dragMarker = null; downClient = null; moved = false;
+  svg.classList.remove("grabbing");
+}
+function dropPointer(id) {
+  try { svg.releasePointerCapture(id); } catch (_) {}
+  pointers.delete(id);
+  // Dropping below two fingers ends the pinch; a lingering finger must NOT
+  // suddenly start panning (that jumps the map), so clear the drag state and
+  // wait for a fresh touch.
+  if (pointers.size < 2) { pinchPrev = null; drag = null; dragMarker = null; }
+  if (pointers.size === 0) endDrag();
+}
+let lastTap = 0, lastTapXY = null;
+svg.addEventListener("pointerup", e => {
+  if (pointers.size === 1 && drag && !moved) {
+    const now = Date.now();
+    if (now - lastTap < 300 && lastTapXY &&
+        Math.hypot(e.clientX - lastTapXY.x, e.clientY - lastTapXY.y) < 30) {
+      resetView(); flash("Fit to view"); lastTap = 0;   // double-tap → fit
+    } else {
+      handleTap(e.clientX, e.clientY);                    // single tap → cursor
+      lastTap = now; lastTapXY = { x: e.clientX, y: e.clientY };
+    }
+  }
+  dropPointer(e.pointerId);
+});
+svg.addEventListener("pointercancel", e => dropPointer(e.pointerId));
+// Safety net: if a pointerup/cancel ever bypasses the SVG (capture lost, gesture
+// hijacked by the OS), the window still sees it — clean up so no phantom finger
+// lingers. dropPointer is idempotent, so a double call is harmless.
+window.addEventListener("pointerup", e => dropPointer(e.pointerId));
+window.addEventListener("pointercancel", e => dropPointer(e.pointerId));
+// Stronger safety net for iOS WKWebView, where a pointerup/cancel can be
+// dropped entirely (a native gesture, the app's JS bridge, or a re-render
+// mid-gesture after adding a section) — leaving a phantom entry in `pointers`
+// so the next single tap looks like a two-finger pinch and tap-to-place / Set
+// start/end silently stop working. touchend/touchcancel with no touches left is
+// the reliable "every finger is off the glass" signal, so wipe all pointer
+// state then. Only fires on touch devices; harmless when no gesture is active.
+function clearAllPointers(e) {
+  if (e.touches && e.touches.length) return;   // fingers still down
+  pointers.clear(); pinchPrev = null; endDrag();
+}
+window.addEventListener("touchend", clearAllPointers);
+window.addEventListener("touchcancel", clearAllPointers);
+// Any touch that lands OUTSIDE the map (a button, a form field, the section
+// list) means the current map gesture is over, so wipe any leftover pointer
+// state — this is what recovers the map after a phantom finger is left by a
+// dropped pointerup/touchend (iOS WKWebView can drop them after the re-render
+// that adding a section triggers). Capture phase so it runs before the target's
+// own handler, and scoped to non-SVG targets so it can NEVER interfere with
+// panning, dragging a pin or tapping the track.
+document.addEventListener("pointerdown", e => {
+  if (!svg.contains(e.target)) { pointers.clear(); pinchPrev = null; endDrag(); }
+}, true);
+function stageCentre() {
+  const r = svg.getBoundingClientRect();
+  return clientToScene(r.left + r.width/2, r.top + r.height/2);
+}
+onTap($("zin"), () => zoomAt(1.3, stageCentre()));
+onTap($("zout"), () => zoomAt(1/1.3, stageCentre()));
+onTap($("zfit"), resetView);
+</script>
+</body>
+</html>

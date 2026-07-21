@@ -1,0 +1,88 @@
+{
+    "name": "GT4 Practice / Hotlap",
+    "background": [12, 13, 16],
+    "widgets": [
+        {
+            "type": "ShiftLightsWidget",
+            "x": 0,
+            "y": 0,
+            "width": 800,
+            "height": 32,
+            "count": 14
+        },
+        {
+            "type": "FlagWidget",
+            "x": 650,
+            "y": 2,
+            "width": 148,
+            "height": 28
+        },
+        {
+            "type": "LapCounterWidget",
+            "x": 0,
+            "y": 32,
+            "width": 80,
+            "height": 78
+        },
+        {
+            "type": "LapInfoWidget",
+            "x": 80,
+            "y": 32,
+            "width": 720,
+            "height": 78
+        },
+        {
+            "type": "SectorTimesWidget",
+            "x": 0,
+            "y": 110,
+            "width": 800,
+            "height": 62
+        },
+        {
+            "type": "GearWidget",
+            "x": 0,
+            "y": 172,
+            "width": 160,
+            "height": 128
+        },
+        {
+            "type": "SpeedWidget",
+            "x": 160,
+            "y": 172,
+            "width": 170,
+            "height": 128,
+            "unit": "km/h"
+        },
+        {
+            "type": "RPMGaugeWidget",
+            "x": 330,
+            "y": 172,
+            "width": 310,
+            "height": 128
+        },
+        {
+            "type": "PedalsWidget",
+            "x": 640,
+            "y": 172,
+            "width": 160,
+            "height": 128
+        },
+        {
+            "type": "TyreWidget",
+            "x": 0,
+            "y": 300,
+            "width": 200,
+            "height": 140,
+            "show_pressure": true,
+            "cold_temp": 55,
+            "hot_temp": 100
+        },
+        {
+            "type": "LapListWidget",
+            "x": 200,
+            "y": 300,
+            "width": 600,
+            "height": 140
+        }
+    ]
+}

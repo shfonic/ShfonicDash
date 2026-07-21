@@ -1,0 +1,4 @@
+{
+    "name": "LCD Practice / Hotlap",
+    "python_class": "dashboard.lcd_dashboard.LCDDashboard"
+}

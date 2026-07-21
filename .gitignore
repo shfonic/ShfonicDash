@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Virtual environment
+venv/
+ENV/
+env/
+
+# Pygame / system stuff
+*.db
+*.sqlite3
+
+# VS Code settings (optional)
+.vscode/
+
+# Local user config
+src/config.json
+logs/session_*.csv
+logs/*.log
+logs/captures/
+
+# Locally recorded track maps
+tracks/*.json
+
+# Claude Code — local-only permissions (machine-specific paths)
+.claude/settings.local.json
+
+# Shared sessionlog library — local tuning/index files
+src/grading.json
+src/downloaded/
+
+# Local Azurite (Azure storage emulator) artifacts
+AzuriteConfig
+__azurite_db_table__.json
+
+# Screenshot preview gallery (scratch — README images live in docs/)
+screenshots/

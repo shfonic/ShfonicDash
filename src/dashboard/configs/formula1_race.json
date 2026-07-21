@@ -1,0 +1,21 @@
+{
+    "name": "Formula 1 Race",
+    "background": [12, 13, 16],
+    "widgets": [
+        { "type": "ShiftLightsWidget", "x": 0,   "y": 0,   "width": 800, "height": 32, "count": 16 },
+        { "type": "FlagWidget",        "x": 650,  "y": 2,   "width": 148, "height": 28 },
+        { "type": "PositionWidget",    "x": 0,    "y": 32,  "width": 80,  "height": 80, "show_total": true },
+        { "type": "DRSWidget",         "x": 80,   "y": 32,  "width": 90,  "height": 80 },
+        { "type": "LapCounterWidget",  "x": 170,  "y": 32,  "width": 80,  "height": 80 },
+        { "type": "LapInfoWidget",     "x": 250,  "y": 32,  "width": 550, "height": 80 },
+        { "type": "RPMGaugeWidget",    "x": 0,    "y": 112, "width": 190, "height": 188 },
+        { "type": "GearWidget",        "x": 190,  "y": 112, "width": 350, "height": 188 },
+        { "type": "SpeedWidget",       "x": 540,  "y": 112, "width": 260, "height": 100, "unit": "km/h" },
+        { "type": "ERSWidget",         "x": 540,  "y": 212, "width": 260, "height": 88 },
+        { "type": "TyreWidget",        "x": 0,    "y": 300, "width": 240, "height": 130, "show_pressure": false, "cold_temp": 70, "hot_temp": 115 },
+        { "type": "SectorTimesWidget", "x": 240,  "y": 300, "width": 400, "height": 50 },
+        { "type": "FuelWidget",        "x": 240,  "y": 350, "width": 400, "height": 80, "show_laps": true },
+        { "type": "PedalsWidget",      "x": 640,  "y": 300, "width": 160, "height": 130 },
+        { "type": "ProximityWidget",   "x": 0,    "y": 430, "width": 800, "height": 50 }
+    ]
+}

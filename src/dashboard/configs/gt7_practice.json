@@ -1,0 +1,16 @@
+{
+    "name": "Gran Turismo 7 Practice",
+    "background": [12, 13, 16],
+    "widgets": [
+        { "type": "ShiftLightsWidget", "x": 0,    "y": 0,   "width": 800, "height": 32, "count": 12, "rpm_start": 0.55 },
+        { "type": "LapCounterWidget",  "x": 0,    "y": 32,  "width": 80,  "height": 80 },
+        { "type": "LapInfoWidget",     "x": 80,   "y": 32,  "width": 720, "height": 80 },
+        { "type": "RPMGaugeWidget",    "x": 0,    "y": 112, "width": 200, "height": 180 },
+        { "type": "GearWidget",        "x": 200,  "y": 112, "width": 370, "height": 180 },
+        { "type": "SpeedWidget",       "x": 570,  "y": 112, "width": 230, "height": 100, "unit": "km/h" },
+        { "type": "PedalsWidget",      "x": 570,  "y": 212, "width": 230, "height": 80 },
+        { "type": "TyreWidget",        "x": 0,    "y": 292, "width": 570, "height": 68, "show_pressure": false },
+        { "type": "FuelWidget",        "x": 570,  "y": 292, "width": 230, "height": 68 },
+        { "type": "LapListWidget",     "x": 0,    "y": 360, "width": 800, "height": 120 }
+    ]
+}
