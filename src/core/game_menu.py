@@ -126,6 +126,9 @@ class GameMenu:
         self._log_server = log_server
         self._logs_dir   = logs_dir
         self._share_logs = config.get("share_logs", False)
+        # The SYNC pill (Pythonista companion) is hidden by default — only
+        # useful to drivers running the iOS app. Opt in on SETTINGS → COMPANION.
+        self._show_sync  = config.get("show_sync_button", False)
         from core import config_store
         self._share_window = config_store.share_window_days(config)
         self._web_mode     = config_store.web_app_mode(config)
@@ -327,10 +330,10 @@ class GameMenu:
                     elif qr_rect.width and qr_rect.collidepoint(pos):
                         hovered = "_qr"
 
-            # Long-press: open settings on the DATA tab
+            # Long-press: open settings on the COMPANION tab (sync lives there)
             if self._pill_down and (time.time() - self._pill_start) >= _LONG_PRESS_SECONDS:
                 self._pill_down = False
-                if self._open_settings(start_tab="data"):
+                if self._open_settings(start_tab="companion"):
                     return None
                 self._scan_milestone()
 
@@ -470,7 +473,11 @@ class GameMenu:
         return self._pill_row_rect("_settings")
 
     def _sync_rect(self) -> pygame.Rect:
-        """Bounds of the top-left sync pill; width depends on current state."""
+        """Bounds of the top-left sync pill; width depends on current state.
+        Zero-width (hidden) unless the driver has opted the Pythonista SYNC
+        pill in (SETTINGS → COMPANION → Show SYNC button)."""
+        if not self._show_sync:
+            return pygame.Rect(0, 0, 0, 0)
         pad = 12
         w = pad + 14 + self._font_exit.size("SYNC")[0] + pad
         if self._share_logs:
@@ -744,6 +751,8 @@ class GameMenu:
         self._screen.blit(line, line.get_rect(center=rect.center))
 
     def _draw_sync_pill(self, rect: pygame.Rect, hovered: bool):
+        if not rect.width:
+            return
         on = self._share_logs
         r  = rect.height // 2
         pygame.draw.rect(self._screen, PANEL2 if hovered else PANEL, rect, border_radius=r)
@@ -1378,6 +1387,7 @@ class GameMenu:
             debrief_enabled=cfg.get("debrief_enabled", True),
             screensaver_enabled=cfg.get("screensaver_enabled", True),
             record_button_enabled=self._record_enabled,
+            show_sync_button=self._show_sync,
             web_app_mode=web_mode,
             on_web_mode_change=_on_web_mode,
             pairing_code=config_store.api_token(cfg),
@@ -1414,10 +1424,12 @@ class GameMenu:
         cfg["debrief_enabled"]      = result["debrief_enabled"]
         cfg["screensaver_enabled"]  = result["screensaver_enabled"]
         cfg["show_record_button"]   = result["record_button_enabled"]
+        cfg["show_sync_button"]     = result["show_sync_button"]
         cfg["web_app_mode"]         = result.get("web_app_mode", "menu")
         cfg["enabled_games"]        = result["enabled_games"]
         config_store.save(cfg)
         self._record_enabled = result["record_button_enabled"]
+        self._show_sync      = result["show_sync_button"]
         if not self._record_enabled:
             self._record_armed = False   # can't stay armed via a hidden pill
         self._share_window = result["share_window_days"]

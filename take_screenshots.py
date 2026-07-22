@@ -271,6 +271,7 @@ def menu(name, mock_mode=False, sync=False, picker=False, real=False,
             "filename":  "",
         }
     if sync:
+        m._show_sync = True    # SYNC pill is opt-in (Pythonista companion)
         m._share_logs = True
         m._waiting = 3
     if picker:

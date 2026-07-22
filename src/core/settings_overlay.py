@@ -17,7 +17,7 @@ _PW  = _CW - _PAD * 2    # 592  usable content width
 # ── Tab definitions ───────────────────────────────────────────────────────────
 _TABS_BASE = [("display", "DISPLAY"), ("units", "UNITS")]
 _TABS_MENU = [("display", "DISPLAY"), ("units", "UNITS"),
-              ("games", "GAMES"), ("data", "DATA")]
+              ("games", "GAMES"), ("companion", "COMPANION"), ("data", "DATA")]
 _TAB_H    = 28
 _TAB_GAP  = 10
 _Y_TABS   = 4
@@ -39,24 +39,29 @@ _Y_SEP3        = _Y_SCREENSAVER_ROW + _TGL_ROW_H + 8   # 384
 _Y_ACTIONS     = _Y_SEP3 + 10                           # 394
 _ACTION_H      = 42
 
-# ── DATA tab y-offsets (fits within same _CH) ─────────────────────────────────
-_Y_DATA_SHARE_LBL = 60
-_Y_DATA_SHARE_ROW = 76     # Share Logs toggle row (height _TGL_ROW_H)
-_Y_DATA_URL       = 120    # URL text row (22 px gap between row and sep)
-_Y_DATA_SEP       = 142
-_Y_DATA_WIN_LBL   = 156
-_Y_DATA_WIN_BTNS  = 172    # share-window button row
-_WIN_BTN_H        = 48
-_Y_DATA_REBUILD   = _Y_DATA_WIN_BTNS + _WIN_BTN_H + 12   # 232
-_REBUILD_BTN_H    = 42     # ends at 274, well above sep3 (330)
-_Y_DATA_SEP2      = _Y_DATA_REBUILD + _REBUILD_BTN_H + 12 # 286
-_Y_DATA_RECORD    = _Y_DATA_SEP2 + 10                     # 296  Show RECORD button
-_Y_DATA_WEB_LBL   = _Y_DATA_RECORD + _TGL_ROW_H + 4       # 340  WEB COMPANION label
-_Y_DATA_WEB_BTNS  = _Y_DATA_WEB_LBL + 14                  # 354  off/menu/always row
-_WEB_BTN_H        = 28                                    # ends at 382, above sep3
+# ── DATA tab y-offsets (session-data management: index + record button) ───────
+_REBUILD_BTN_H     = 42
+_Y_DATA_INDEX_LBL  = 60
+_Y_DATA_REBUILD    = 78                                   # rebuild btn → 120
+_Y_DATA_SEP        = 140
+_Y_DATA_RECORD_LBL = 152
+_Y_DATA_RECORD     = 168                                  # Show RECORD toggle → 208
+
+# ── COMPANION tab y-offsets (web companion + Pythonista sync) ─────────────────
+_WEB_BTN_H        = 28
 _WEB_OPTIONS      = [("off", "OFF"), ("menu", "MENU"), ("always", "ALWAYS")]
 _WEB_GAP          = 10
 _WEB_BTN_W        = (_PW - _WEB_GAP * (len(_WEB_OPTIONS) - 1)) // len(_WEB_OPTIONS)
+_WIN_BTN_H        = 48
+_Y_COMP_WEB_LBL   = 60
+_Y_COMP_WEB_BTNS  = 76                                    # off/menu/always → 104
+_Y_COMP_URL       = 114                                   # URL + QR hint + pairing code
+_Y_COMP_SEP       = 146
+_Y_COMP_SYNC_LBL  = 158                                   # PYTHONISTA SYNC label
+_Y_COMP_SHOW_ROW  = 172                                   # Show SYNC button toggle → 212
+_Y_COMP_SHARE_ROW = 212                                   # Share logs over Wi-Fi → 252
+_Y_COMP_WIN_LBL   = 258                                   # SHARE SESSIONS FROM THE LAST
+_Y_COMP_WIN_BTNS  = 274                                   # window buttons → 322
 
 # ── GAMES tab y-offsets ───────────────────────────────────────────────────────
 _Y_GAMES_LBL  = 60
@@ -112,6 +117,7 @@ class SettingsOverlay:
             debrief_enabled: bool = True,
             screensaver_enabled: bool = True,
             record_button_enabled: bool = False,
+            show_sync_button: bool = False,
             web_app_mode: str = "menu",
             on_web_mode_change=None,
             pairing_code: str = "",
@@ -149,6 +155,7 @@ class SettingsOverlay:
         pending_debrief   = debrief_enabled
         pending_saver     = screensaver_enabled
         pending_record    = record_button_enabled
+        pending_show_sync = show_sync_button
         pending_web_mode  = web_app_mode if web_app_mode in ("off", "menu", "always") else "menu"
         current_url       = log_server_url
         self._pairing_code = pairing_code
@@ -156,8 +163,8 @@ class SettingsOverlay:
         enabled_games     = enabled_games or {}
         pending_games     = {g["id"]: bool(enabled_games.get(g["id"], True))
                              for g in self._games}
-        # "data"/"games" tabs only exist on the game menu (show_data_tabs)
-        active_tab        = (start_tab if (start_tab not in ("data", "games")
+        # "data"/"games"/"companion" tabs only exist on the game menu (show_data_tabs)
+        active_tab        = (start_tab if (start_tab not in ("data", "games", "companion")
                                            or show_data_tabs) else "display")
         rebuild_state     = "idle"    # idle → done
         rebuilt_count     = 0
@@ -170,18 +177,18 @@ class SettingsOverlay:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return _out("quit", pending_flip, pending_theme, pending_accent,
-                                pending_units, pending_share, pending_window, pending_summary, pending_games, pending_debrief, pending_saver, pending_record, pending_web_mode)
+                                pending_units, pending_share, pending_window, pending_summary, pending_games, pending_debrief, pending_saver, pending_record, pending_web_mode, pending_show_sync)
 
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         return _out("dismiss", pending_flip, pending_theme, pending_accent,
-                                    pending_units, pending_share, pending_window, pending_summary, pending_games, pending_debrief, pending_saver, pending_record, pending_web_mode)
+                                    pending_units, pending_share, pending_window, pending_summary, pending_games, pending_debrief, pending_saver, pending_record, pending_web_mode, pending_show_sync)
 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     pos = flip_pos(event.pos, pending_flip)
                     if not pygame.Rect(_CX, _CY, _CW, _CH).collidepoint(pos):
                         return _out("dismiss", pending_flip, pending_theme, pending_accent,
-                                    pending_units, pending_share, pending_window, pending_summary, pending_games, pending_debrief, pending_saver, pending_record, pending_web_mode)
+                                    pending_units, pending_share, pending_window, pending_summary, pending_games, pending_debrief, pending_saver, pending_record, pending_web_mode, pending_show_sync)
                     hit = _hit(rects, pos)
                     if hit and hit.startswith("tab:"):
                         tab = hit[4:]
@@ -222,6 +229,8 @@ class SettingsOverlay:
                         pending_saver = not pending_saver
                     elif hit == "record":
                         pending_record = not pending_record
+                    elif hit == "show_sync":
+                        pending_show_sync = not pending_show_sync
                     elif hit and hit.startswith("web:"):
                         pending_web_mode = hit[4:]
                         if on_web_mode_change:
@@ -247,7 +256,7 @@ class SettingsOverlay:
                             current_url = get_server_url()
                     elif hit in ("dismiss", "menu"):
                         return _out(hit, pending_flip, pending_theme, pending_accent,
-                                    pending_units, pending_share, pending_window, pending_summary, pending_games, pending_debrief, pending_saver, pending_record, pending_web_mode)
+                                    pending_units, pending_share, pending_window, pending_summary, pending_games, pending_debrief, pending_saver, pending_record, pending_web_mode, pending_show_sync)
 
                 elif event.type == pygame.MOUSEMOTION:
                     hovered = _hit(rects, flip_pos(event.pos, pending_flip))
@@ -256,7 +265,7 @@ class SettingsOverlay:
                        pending_units, active_tab, hovered, rects,
                        show_data_tabs, pending_share, current_url, pending_window,
                        rebuild_state, rebuilt_count, pending_summary, pending_games, pending_debrief,
-                       pending_saver, pending_record, pending_web_mode)
+                       pending_saver, pending_record, pending_web_mode, pending_show_sync)
             pygame.display.flip()
             clock.tick(30)
 
@@ -327,15 +336,6 @@ class SettingsOverlay:
                 )
 
         elif active_tab == "data":
-            rects["share_logs"] = pygame.Rect(
-                px + _PW - _FTGL_W,
-                _CY + _Y_DATA_SHARE_ROW + (_TGL_ROW_H - _FTGL_H) // 2,
-                _FTGL_W, _FTGL_H,
-            )
-            for i, (days, _label) in enumerate(_WIN_OPTIONS):
-                bx = px + i * (_WIN_BTN_W + _WIN_GAP)
-                rects[f"win:{days}"] = pygame.Rect(bx, _CY + _Y_DATA_WIN_BTNS,
-                                                   _WIN_BTN_W, _WIN_BTN_H)
             rects["rebuild_index"] = pygame.Rect(px, _CY + _Y_DATA_REBUILD,
                                                  _PW, _REBUILD_BTN_H)
             rects["record"] = pygame.Rect(
@@ -343,12 +343,28 @@ class SettingsOverlay:
                 _CY + _Y_DATA_RECORD + (_TGL_ROW_H - _FTGL_H) // 2,
                 _FTGL_W, _FTGL_H,
             )
+
+        elif active_tab == "companion":
             for i, (mode, _label) in enumerate(_WEB_OPTIONS):
                 bx = px + i * (_WEB_BTN_W + _WEB_GAP)
-                rects[f"web:{mode}"] = pygame.Rect(bx, _CY + _Y_DATA_WEB_BTNS,
+                rects[f"web:{mode}"] = pygame.Rect(bx, _CY + _Y_COMP_WEB_BTNS,
                                                    _WEB_BTN_W, _WEB_BTN_H)
             # The server URL line doubles as the "show pairing QR" affordance.
-            rects["show_qr"] = pygame.Rect(px, _CY + _Y_DATA_URL - 2, _PW, 24)
+            rects["show_qr"] = pygame.Rect(px, _CY + _Y_COMP_URL - 2, _PW, 24)
+            rects["show_sync"] = pygame.Rect(
+                px + _PW - _FTGL_W,
+                _CY + _Y_COMP_SHOW_ROW + (_TGL_ROW_H - _FTGL_H) // 2,
+                _FTGL_W, _FTGL_H,
+            )
+            rects["share_logs"] = pygame.Rect(
+                px + _PW - _FTGL_W,
+                _CY + _Y_COMP_SHARE_ROW + (_TGL_ROW_H - _FTGL_H) // 2,
+                _FTGL_W, _FTGL_H,
+            )
+            for i, (days, _label) in enumerate(_WIN_OPTIONS):
+                bx = px + i * (_WIN_BTN_W + _WIN_GAP)
+                rects[f"win:{days}"] = pygame.Rect(bx, _CY + _Y_COMP_WIN_BTNS,
+                                                   _WIN_BTN_W, _WIN_BTN_H)
 
         # Quit / shutdown moved to the game menu's power button; settings only
         # ever closes itself (DISMISS) or returns to the menu mid-session (MENU).
@@ -375,7 +391,8 @@ class SettingsOverlay:
               rebuild_state: str = "idle", rebuilt_count: int = 0,
               show_summary: bool = True, enabled_games: dict | None = None,
               debrief_on: bool = True, screensaver_on: bool = True,
-              record_on: bool = False, web_mode: str = "menu"):
+              record_on: bool = False, web_mode: str = "menu",
+              show_sync: bool = False):
         from dashboard.widgets import design_system as DS
 
         screen.blit(frozen, (0, 0))
@@ -458,62 +475,71 @@ class SettingsOverlay:
                                   hovered == key)
 
         elif active_tab == "data":
-            # Share Logs section
-            lbl = self._font_label.render("SHARE LOGS", True, DS.TEXT3)
-            screen.blit(lbl, (px, _CY + _Y_DATA_SHARE_LBL))
+            # Session index (records DB rebuild).
+            lbl = self._font_label.render("SESSION INDEX", True, DS.TEXT3)
+            screen.blit(lbl, (px, _CY + _Y_DATA_INDEX_LBL))
+            self._draw_rebuild_btn(screen, rects["rebuild_index"],
+                                   rebuild_state, rebuilt_count,
+                                   hovered == "rebuild_index")
 
-            sl = self._font_btn.render("Share logs over Wi-Fi", True, DS.TEXT2)
-            screen.blit(sl, (px, _CY + _Y_DATA_SHARE_ROW + (_TGL_ROW_H - sl.get_height()) // 2))
-            self._draw_toggle(screen, rects["share_logs"], share_logs, hovered == "share_logs")
+            pygame.draw.line(screen, DS.BORDER,
+                             (px, _CY + _Y_DATA_SEP), (px + _PW, _CY + _Y_DATA_SEP))
+
+            # Track mapping (RECORD pill on the game picker).
+            tl = self._font_label.render("TRACK MAPPING", True, DS.TEXT3)
+            screen.blit(tl, (px, _CY + _Y_DATA_RECORD_LBL))
+            rc = self._font_btn.render("Show RECORD button", True, DS.TEXT2)
+            screen.blit(rc, (px, _CY + _Y_DATA_RECORD + (_TGL_ROW_H - rc.get_height()) // 2))
+            self._draw_toggle(screen, rects["record"], record_on, hovered == "record")
+
+        elif active_tab == "companion":
+            # ── Web companion (browser) — the general-public feature, up top ──
+            wl = self._font_label.render("WEB COMPANION (BROWSER)", True, DS.TEXT3)
+            screen.blit(wl, (px, _CY + _Y_COMP_WEB_LBL))
+            for mode, label in _WEB_OPTIONS:
+                self._draw_seg_btn(screen, rects[f"web:{mode}"], label,
+                                   web_mode == mode, hovered == f"web:{mode}")
 
             code = getattr(self, "_pairing_code", "")
             server_live = (share_logs or web_mode != "off") and server_url
             if server_live:
                 url_s = self._font_url.render(server_url, True, DS.on_panel(DS.CYAN))
-                screen.blit(url_s, (px, _CY + _Y_DATA_URL))
+                screen.blit(url_s, (px, _CY + _Y_COMP_URL))
                 # Tap hint — the URL row opens the scannable pairing QR.
                 if code and web_mode != "off":
                     tip = self._font_url.render("· TAP FOR QR", True, DS.TEXT3)
-                    screen.blit(tip, (px + url_s.get_width() + 10, _CY + _Y_DATA_URL))
+                    screen.blit(tip, (px + url_s.get_width() + 10, _CY + _Y_COMP_URL))
             if server_live and code:
                 # The companion asks for this once when pairing.
                 code_s = self._font_url.render(f"PAIRING CODE  {code}",
                                                True, DS.on_panel(DS.AMBER))
                 screen.blit(code_s, code_s.get_rect(
-                    topright=(px + _PW, _CY + _Y_DATA_URL)))
+                    topright=(px + _PW, _CY + _Y_COMP_URL)))
 
-            # Separator
             pygame.draw.line(screen, DS.BORDER,
-                             (px, _CY + _Y_DATA_SEP), (px + _PW, _CY + _Y_DATA_SEP))
+                             (px, _CY + _Y_COMP_SEP), (px + _PW, _CY + _Y_COMP_SEP))
 
-            # Share window section — what index.json lists for download.
-            # Session files themselves are always kept (history database).
-            lbl = self._font_label.render("SHARE SESSIONS FROM THE LAST", True, DS.TEXT3)
-            screen.blit(lbl, (px, _CY + _Y_DATA_WIN_LBL))
+            # ── Pythonista companion sync (iOS app; hidden pill by default) ──
+            sh = self._font_label.render("PYTHONISTA SYNC", True, DS.TEXT3)
+            screen.blit(sh, (px, _CY + _Y_COMP_SYNC_LBL))
 
+            ss = self._font_btn.render("Show SYNC button", True, DS.TEXT2)
+            screen.blit(ss, (px, _CY + _Y_COMP_SHOW_ROW + (_TGL_ROW_H - ss.get_height()) // 2))
+            self._draw_toggle(screen, rects["show_sync"], show_sync, hovered == "show_sync")
+
+            sl = self._font_btn.render("Share logs over Wi-Fi", True, DS.TEXT2)
+            screen.blit(sl, (px, _CY + _Y_COMP_SHARE_ROW + (_TGL_ROW_H - sl.get_height()) // 2))
+            self._draw_toggle(screen, rects["share_logs"], share_logs, hovered == "share_logs")
+
+            # Share window — what index.json lists for download. Session files
+            # themselves are always kept (history database).
+            wlbl = self._font_label.render("SHARE SESSIONS FROM THE LAST", True, DS.TEXT3)
+            screen.blit(wlbl, (px, _CY + _Y_COMP_WIN_LBL))
             for i, (days, label) in enumerate(_WIN_OPTIONS):
                 rect      = rects[f"win:{days}"]
                 is_active = days == window_days
                 is_hov    = hovered == f"win:{days}"
                 self._draw_window_btn(screen, rect, label, is_active, is_hov)
-
-            self._draw_rebuild_btn(screen, rects["rebuild_index"],
-                                   rebuild_state, rebuilt_count,
-                                   hovered == "rebuild_index")
-
-            pygame.draw.line(screen, DS.BORDER, (px, _CY + _Y_DATA_SEP2),
-                             (px + _PW, _CY + _Y_DATA_SEP2))
-            rc = self._font_btn.render("Show RECORD button (track mapping)",
-                                       True, DS.TEXT2)
-            screen.blit(rc, (px, _CY + _Y_DATA_RECORD + (_TGL_ROW_H - rc.get_height()) // 2))
-            self._draw_toggle(screen, rects["record"], record_on, hovered == "record")
-
-            # Web companion — when the browser dashboard is reachable.
-            wl = self._font_label.render("WEB COMPANION (BROWSER)", True, DS.TEXT3)
-            screen.blit(wl, (px, _CY + _Y_DATA_WEB_LBL))
-            for mode, label in _WEB_OPTIONS:
-                self._draw_seg_btn(screen, rects[f"web:{mode}"], label,
-                                   web_mode == mode, hovered == f"web:{mode}")
 
         # Sep 3
         pygame.draw.line(screen, DS.BORDER, (px, _CY + _Y_SEP3), (px + _PW, _CY + _Y_SEP3))
@@ -714,7 +740,8 @@ def _out(action: str, flip: bool, theme: str, accent_mode: str, units_mode: str,
          debrief_enabled: bool = True,
          screensaver_enabled: bool = True,
          record_button_enabled: bool = False,
-         web_app_mode: str = "menu") -> dict:
+         web_app_mode: str = "menu",
+         show_sync_button: bool = False) -> dict:
     return {
         "action":               action,
         "flip":                 flip,
@@ -729,6 +756,7 @@ def _out(action: str, flip: bool, theme: str, accent_mode: str, units_mode: str,
         "screensaver_enabled":  screensaver_enabled,
         "record_button_enabled": record_button_enabled,
         "web_app_mode":         web_app_mode,
+        "show_sync_button":     show_sync_button,
     }
 
 

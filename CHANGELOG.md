@@ -11,6 +11,16 @@ history remains in git.
 
 ---
 
+## [0.69.0] — Companion settings tab (2026-07-22)
+
+Grouped all connectivity settings onto a dedicated **COMPANION** tab in Settings
+— the web-companion mode plus its pairing URL / QR code lead, followed by the
+Pythonista-app sync controls (share logs, share window). The top-left **SYNC**
+pill on the game menu, which only matters to drivers running the iOS companion,
+is now **hidden by default**; turn on *Show SYNC button* on the Companion tab to
+bring it back. The Data tab slims down to session-data management (rebuild the
+session index, toggle the track-recording button).
+
 ## [0.68.3] — Initial public release (2026-07-21)
 
 The first public release. What Shfonic Dash does today:
