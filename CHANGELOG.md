@@ -11,6 +11,15 @@ history remains in git.
 
 ---
 
+## [0.70.0] — Race-position chart by event (2026-07-22)
+
+The web companion's race chart is now a **Race position** graph drawn at
+overtake granularity, identical to the Pythonista companion's. It reconstructs
+your position from the grid slot through every `overtake` / `overtaken` event —
+each place gained marked with a green ▲, each lost with a red ▼ — rather than
+stepping only at lap boundaries, with position gridlines and a GRID → finish
+axis. Both apps now share the same trace logic, so the two charts always agree.
+
 ## [0.69.1] — Position-by-lap chart fix (2026-07-22)
 
 The web companion's race **Position by lap** chart now starts from your grid

@@ -287,8 +287,14 @@ table.laps tr.inv td:first-child{box-shadow:inset 3px 0 0 var(--red)}
 .chart{width:100%;height:auto;display:block}
 .chart .ln{stroke:var(--amber);fill:none;stroke-width:1.5;stroke-linejoin:round}
 .chart .dot{fill:var(--amber)}
+.chart .grid{stroke:var(--border);stroke-width:1;fill:none}
+.chart .up{fill:var(--green)} .chart .down{fill:var(--red)}
+.chart .end{fill:var(--text)}
 .chart text{font-weight:500;font-size:11px;fill:var(--text3)}
 .chart text.big{font-size:12px;fill:var(--text2)}
+.charthead{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.leg{font-size:10px;color:var(--text4);white-space:nowrap}
+.leg .up{color:var(--green)} .leg .down{color:var(--red)}
 .mapcard{position:relative;display:block}
 .mapcard .hint{position:absolute;left:0;right:0;bottom:8px;text-align:center;
   font-size:11px;color:var(--text3)}
@@ -1789,7 +1795,11 @@ def _chart_card(session, summary, is_race, logs_dir) -> str:
     if is_race:
         svg = _position_chart(session)
         if svg:
-            return f'<div class=sec><p class=label>Position by lap</p>{svg}</div>'
+            return ('<div class=sec><div class=charthead>'
+                    '<p class=label>Race position</p>'
+                    '<span class=leg><span class=up>&#9650;</span> gained  '
+                    '<span class=down>&#9660;</span> lost</span></div>'
+                    f'{svg}</div>')
         return ""
     svg = _progress_chart(session, logs_dir)
     if svg:
@@ -1798,44 +1808,130 @@ def _chart_card(session, summary, is_race, logs_dir) -> str:
     return ""
 
 
+def _position_trace(session, laps):
+    """Reconstruct the player's race position at overtake granularity — a
+    faithful mirror of the companion's ``dashboard._position_trace`` so the web
+    RACE POSITION chart is identical.
+
+    Anchors are the grid slot (x=0) plus each lap's recorded position (x=lap
+    num) — the ground truth. Between them, ``overtake``/``overtaken`` events
+    (F1) place a step at the exact point in the lap they happened
+    (``distance`` metres ÷ circuit length); an overtake moves the driver up one
+    place, being overtaken down one. Each lap segment snaps back to its anchor,
+    so untracked changes never drift the line.
+
+    Returns ``{'trace', 'markers', 'lap_max', 'has_grid'}`` (x in lap units,
+    0 = grid), or None with fewer than two anchors.
+    """
+    from sessionlog import circuits
+    grid, _ = _race_positions(session)
+    anchors = []  # (x, position) ground-truth points
+    if grid is not None:
+        anchors.append((0.0, grid))
+    for lap in laps:
+        num, pos = lap.get("num"), lap.get("position")
+        if num is not None and pos is not None:
+            anchors.append((float(num), int(pos)))
+    if len(anchors) < 2:
+        return None
+
+    length = circuits.length_m(session.get("game"), session.get("track"))
+    moves = [e for e in (session.get("events") or [])
+             if e.get("type") in ("overtake", "overtaken")
+             and e.get("lap_num") is not None]
+
+    def _events_in(lap_num):
+        evs = [e for e in moves if e["lap_num"] == lap_num]
+        return sorted(evs, key=lambda e: (e.get("distance")
+                                          if e.get("distance") is not None
+                                          else (e.get("lap_time") or 0.0)))
+
+    trace = [anchors[0]]
+    markers = []  # (x, position, kind)
+    for i in range(1, len(anchors)):
+        x_prev, p_prev = anchors[i - 1]
+        x_cur, p_cur = anchors[i]
+        lap_num = int(round(x_cur))
+        p = p_prev
+        for e in _events_in(lap_num):
+            dist = e.get("distance")
+            frac = (min(1.0, max(0.0, dist / length))
+                    if (length and dist is not None) else 0.5)
+            x = min(max((lap_num - 1) + frac, x_prev), x_cur)
+            p = max(1, p + (-1 if e["type"] == "overtake" else 1))
+            trace.append((x, p))
+            markers.append((x, p, e["type"]))
+        trace.append((x_cur, p_cur))  # snap back to the lap's known position
+    return {"trace": trace, "markers": markers,
+            "lap_max": anchors[-1][0], "has_grid": grid is not None}
+
+
 def _position_chart(session) -> str:
     laps = [l for l in (session.get("laps") or []) if l.get("position")]
-    # Bookend the per-lap positions with the grid start (before lap 1) and the
-    # classified finish, so the chart tells the same P{start} → P{finish} story
-    # as the header. Per-lap POS only records the position at each lap tickover,
-    # so without the grid slot it never shows the opening-lap climb.
-    start, finish = _race_positions(session)
-    nums = [l["num"] for l in laps]
-    x0 = (min(nums) if nums else 1)
-    x1 = (max(nums) if nums else 1)
-    nodes = []  # (x-axis coord, position)
-    if start:
-        x0 -= 1
-        nodes.append((x0, start))
-    nodes.extend((l["num"], l["position"]) for l in laps)
-    if finish and (not laps or finish != laps[-1]["position"]):
-        x1 += 1
-        nodes.append((x1, finish))
-    if len(nodes) < 2:
+    data = _position_trace(session, laps)
+    if not data:
         return ""
-    W, H, pad = 680, 170, 26
-    poss = [p for _, p in nodes]
+    trace, markers = data["trace"], data["markers"]
+    lap_max = data["lap_max"] or 1
+    W, H = 680, 200
+    left, right, top, bottom = 40, W - 22, 24, H - 26
+    plot_w, plot_h = right - left, bottom - top
+    poss = [p for _, p in trace]
     pmin, pmax = min(poss), max(poss)
-    if pmin == pmax:
-        pmax = pmin + 1
-    def x(n): return pad + (n - x0) / max(1, x1 - x0) * (W - 2 * pad)
-    def y(p): return pad + (p - pmin) / (pmax - pmin) * (H - 2 * pad)
-    # Step line.
-    pts = [(x(n), y(p)) for n, p in nodes]
-    d = f'M {pts[0][0]:.1f} {pts[0][1]:.1f}'
-    for i in range(1, len(pts)):
-        d += f' L {pts[i][0]:.1f} {pts[i-1][1]:.1f} L {pts[i][0]:.1f} {pts[i][1]:.1f}'
-    dots = "".join(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="3.2" class="dot"></circle>'
-                   for px, py in pts)
-    lbl_start = f'<text x="{pts[0][0]:.0f}" y="{pts[0][1]-8:.0f}" class="big">P{poss[0]}</text>'
-    lbl_end = f'<text x="{pts[-1][0]:.0f}" y="{pts[-1][1]-8:.0f}" class="big" text-anchor="end">P{poss[-1]}</text>'
-    return (f'<svg class="chart" viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid meet">'
-            f'<path d="{d}" class="ln"></path>{dots}{lbl_start}{lbl_end}</svg>')
+    span = max(1, pmax - pmin)
+    x_span = max(1e-6, lap_max)
+    def px(v): return left + plot_w * v / x_span
+    def py(p): return top + plot_h * (p - pmin) / span  # smaller P = higher
+
+    # Recessive horizontal gridlines: every integer position when the range is
+    # small, else just the extremes.
+    grid = range(pmin, pmax + 1) if pmax - pmin <= 8 else (pmin, pmax)
+    gridlines = "".join(
+        f'<line class="grid" x1="{left}" y1="{py(p):.1f}" '
+        f'x2="{right}" y2="{py(p):.1f}"></line>' for p in grid)
+
+    # y-axis labels at the extremes.
+    yaxis = "".join(
+        f'<text x="6" y="{py(p)+4:.0f}">P{p}</text>' for p in sorted({pmin, pmax}))
+
+    # Step line: hold each position until the next event, then step.
+    d = f'M {px(trace[0][0]):.1f} {py(trace[0][1]):.1f}'
+    for i in range(1, len(trace)):
+        x, p = trace[i]
+        d += f' L {px(x):.1f} {py(trace[i-1][1]):.1f} L {px(x):.1f} {py(p):.1f}'
+    line = f'<path d="{d}" class="ln"></path>'
+
+    # Overtake markers: ▲ (green) gained, ▼ (red) lost.
+    tris = []
+    for x, p, kind in markers:
+        mx, my = px(x), py(p)
+        up = (kind == "overtake")
+        if up:
+            pts = f'{mx:.1f},{my-5:.1f} {mx-4:.1f},{my+3:.1f} {mx+4:.1f},{my+3:.1f}'
+            tris.append(f'<polygon class="up" points="{pts}"></polygon>')
+        else:
+            pts = f'{mx:.1f},{my+5:.1f} {mx-4:.1f},{my-3:.1f} {mx+4:.1f},{my-3:.1f}'
+            tris.append(f'<polygon class="down" points="{pts}"></polygon>')
+    tris = "".join(tris)
+
+    # Endpoint dots + start/finish position labels.
+    ends = ""
+    for x, p in (trace[0], trace[-1]):
+        ends += f'<circle class="end" cx="{px(x):.1f}" cy="{py(p):.1f}" r="2.8"></circle>'
+    lbl_start = (f'<text x="{px(trace[0][0]):.0f}" y="{py(trace[0][1])-9:.0f}" '
+                 f'class="big">P{trace[0][1]}</text>')
+    lbl_end = (f'<text x="{px(trace[-1][0]):.0f}" y="{py(trace[-1][1])-9:.0f}" '
+               f'class="big" text-anchor="end">P{trace[-1][1]}</text>')
+
+    # x-axis: start (GRID or L1) and finish lap labels.
+    start_label = "GRID" if data.get("has_grid") else "L1"
+    xaxis = (f'<text x="{left}" y="{bottom+16:.0f}">{start_label}</text>'
+             f'<text x="{right}" y="{bottom+16:.0f}" text-anchor="end">'
+             f'L{int(lap_max)}</text>')
+
+    return (f'<svg class="chart" viewBox="0 0 {W} {H}" '
+            f'preserveAspectRatio="xMidYMid meet">'
+            f'{gridlines}{yaxis}{line}{tris}{ends}{lbl_start}{lbl_end}{xaxis}</svg>')
 
 
 def _progress_chart(session, logs_dir) -> str:
