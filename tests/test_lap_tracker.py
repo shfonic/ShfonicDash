@@ -6,11 +6,12 @@ from core.telemetry_model import TelemetryData
 
 def _tick(tracker, lap_number=1, lap_time=0.0, last_lap=0.0,
           sector1_time=0.0, sector2_time=0.0, lap_invalid=False,
-          lap_distance=0.0):
+          lap_distance=0.0, finish_status=""):
     return tracker.update(TelemetryData(
         lap_number=lap_number, lap_time=lap_time, last_lap=last_lap,
         sector1_time=sector1_time, sector2_time=sector2_time,
         lap_invalid=lap_invalid, lap_distance=lap_distance,
+        finish_status=finish_status,
     ))
 
 
@@ -206,3 +207,78 @@ def test_reset_clears_state():
     t.reset()
     # Lap 5 → 6 after reset must not commit (no known previous lap)
     assert _tick(t, lap_number=6, lap_time=0.2, last_lap=90.0) == []
+
+
+def test_final_lap_flushed_on_race_finish():
+    # A race finish marks the driver "finished" WITHOUT ticking the lap counter
+    # past the final lap, so the increment path never completes it. The finish
+    # flush must emit it once, using last_lap for the time.
+    t = LapTracker()
+    # Lap 1 completes normally on the tick to lap 2.
+    _tick(t, lap_number=1, lap_time=10.0, sector1_time=28.5)
+    _tick(t, lap_number=1, lap_time=60.0, sector1_time=28.5, sector2_time=59.0)
+    assert len(_tick(t, lap_number=2, lap_time=0.2, last_lap=90.0)) == 1
+    # Driving lap 2 (the final lap) — sectors stream in.
+    _tick(t, lap_number=2, lap_time=30.0, sector1_time=29.0)
+    _tick(t, lap_number=2, lap_time=60.0, sector1_time=29.0, sector2_time=60.0)
+    # Cross the line to finish: counter stays on 2, last_lap = the final time,
+    # finish_status flips to "finished".
+    events = _tick(t, lap_number=2, lap_time=0.1, last_lap=91.5,
+                   sector1_time=29.0, sector2_time=60.0,
+                   finish_status="finished")
+    laps = [e for e in events if isinstance(e, LapCompleted)]
+    assert len(laps) == 1
+    assert laps[0].num == 2
+    assert laps[0].time == pytest.approx(91.5)
+    assert laps[0].s1 == pytest.approx(29.0)
+    assert laps[0].s2 == pytest.approx(31.0)   # 60.0 cumulative − 29.0
+    assert laps[0].s3 == pytest.approx(31.5)   # 91.5 − 60.0
+
+
+def test_finish_flush_fires_only_once():
+    t = LapTracker()
+    _tick(t, lap_number=1, lap_time=10.0)
+    _tick(t, lap_number=2, lap_time=0.2, last_lap=90.0)   # completes lap 1
+    _tick(t, lap_number=2, lap_time=60.0)
+    first = _tick(t, lap_number=2, lap_time=0.1, last_lap=91.5,
+                  finish_status="finished")
+    assert len([e for e in first if isinstance(e, LapCompleted)]) == 1
+    # Subsequent finished frames (cool-down) must not re-emit the final lap.
+    again = _tick(t, lap_number=2, lap_time=5.0, last_lap=91.5,
+                  finish_status="finished")
+    assert [e for e in again if isinstance(e, LapCompleted)] == []
+
+
+def test_no_finish_flush_when_counter_ticks_at_line():
+    # A game that DOES advance the counter at the flag completes the final lap
+    # via the normal increment path; the finish flush must not double-log it
+    # (last_lap still equals the just-completed lap).
+    t = LapTracker()
+    _tick(t, lap_number=1, lap_time=10.0)
+    _tick(t, lap_number=2, lap_time=0.2, last_lap=90.0)   # completes lap 1
+    _tick(t, lap_number=2, lap_time=60.0)
+    # Line crossing ticks 2 → 3 AND flags finished on the same frame.
+    events = _tick(t, lap_number=3, lap_time=0.1, last_lap=91.5,
+                   finish_status="finished")
+    laps = [e for e in events if isinstance(e, LapCompleted)]
+    assert len(laps) == 1 and laps[0].num == 2   # normal completion only
+    # The next finished frame carries the same last_lap — no phantom lap.
+    again = _tick(t, lap_number=3, lap_time=5.0, last_lap=91.5,
+                  finish_status="finished")
+    assert [e for e in again if isinstance(e, LapCompleted)] == []
+
+
+def test_finish_status_reset_allows_next_race_flush():
+    # finish_status clearing (new race) re-arms the flush.
+    t = LapTracker()
+    _tick(t, lap_number=1, lap_time=10.0)
+    _tick(t, lap_number=2, lap_time=0.2, last_lap=90.0)
+    _tick(t, lap_number=2, lap_time=60.0)
+    _tick(t, lap_number=2, lap_time=0.1, last_lap=91.5, finish_status="finished")
+    # Back to racing clears the flag; a fresh finish flushes again.
+    _tick(t, lap_number=3, lap_time=30.0, last_lap=91.5)
+    _tick(t, lap_number=3, lap_time=60.0, last_lap=91.5)
+    events = _tick(t, lap_number=3, lap_time=0.1, last_lap=88.0,
+                   finish_status="finished")
+    laps = [e for e in events if isinstance(e, LapCompleted)]
+    assert len(laps) == 1 and laps[0].num == 3 and laps[0].time == pytest.approx(88.0)

@@ -40,6 +40,11 @@ from core.telemetry_model import TelemetryData
 # from packet timestamps.
 _REWIND_EPSILON_S = 0.05
 
+# Two logged laps whose times match to within this are treated as the same lap.
+# Used by the race-finish flush to skip games that DO tick the counter at the
+# line (the final lap is then already logged; last_lap still equals it).
+_LAP_TIME_EPSILON_S = 0.01
+
 
 @dataclass
 class LapCompleted:
@@ -89,6 +94,8 @@ class LapTracker:
         self._pending_invalid = False
         self._lap_rewinds = 0    # rewinds during the in-progress lap
         self._prev_in_pits = False
+        self._finished_flushed = False   # final-lap flush already emitted
+        self._last_completed_time = 0.0  # time of the last logged completion
 
     def update(self, data: TelemetryData) -> list:
         """Feed one telemetry snapshot; return events
@@ -118,8 +125,45 @@ class LapTracker:
             self._pending_invalid = True
             events.append(LapInvalidated(lap_num, data.lap_time))
 
+        # Race finish. At the chequered flag the game marks the driver
+        # "finished" but does NOT advance the lap counter past the final lap,
+        # so the increment-based completion below never fires for it and the
+        # last lap — the one that decided the result — would be lost. Flush it
+        # once here, before the backwards-jump logic below (the finish line
+        # crossing resets lap_time, which that logic would otherwise read as a
+        # rewind and zero the pending sectors this flush needs). Time comes from
+        # last_lap; the logger reads the final position off the same frame. The
+        # last_lap-differs guard skips games that DO tick the counter at the
+        # line — the lap is already logged normally and last_lap still equals
+        # it — so nothing is double-counted.
+        finished = (data.finish_status == "finished")
+        if not finished:
+            self._finished_flushed = False
+        elif (not self._finished_flushed
+                and data.last_lap > 0
+                and self._prev_lap_num > 0
+                and lap_num == self._prev_lap_num   # no normal tick this frame
+                and abs(data.last_lap - self._last_completed_time)
+                    > _LAP_TIME_EPSILON_S):
+            ps1, ps2 = self._pending_s1, self._pending_s2
+            s2 = ps2 - ps1 if ps2 > ps1 else 0.0
+            s3 = data.last_lap - ps2 if ps2 > 0 and data.last_lap > ps2 else 0.0
+            events.append(LapCompleted(
+                num=lap_num,
+                time=data.last_lap,
+                invalid=self._pending_invalid,
+                s1=ps1, s2=s2, s3=s3,
+                rewinds=self._lap_rewinds,
+            ))
+            self._last_completed_time = data.last_lap
+            self._finished_flushed = True
+            self._lap_rewinds = 0
+
         # Mid-lap backwards jump: same lap, but the streamed lap time dropped.
+        # Suppressed while finished — the line crossing and any cool-down
+        # teleport are not player rewinds.
         if (lap_num == self._prev_lap_num
+                and not finished
                 and self._prev_lap_time > 0.0
                 and data.lap_time < self._prev_lap_time - _REWIND_EPSILON_S):
             self._pending_s1 = 0.0
@@ -163,6 +207,7 @@ class LapTracker:
                 s1=ps1, s2=s2, s3=s3,
                 rewinds=self._lap_rewinds,
             ))
+            self._last_completed_time = data.last_lap
             # The invalid flag on this tick already belongs to the new lap.
             self._pending_invalid = bool(data.lap_invalid)
             self._lap_rewinds = 0

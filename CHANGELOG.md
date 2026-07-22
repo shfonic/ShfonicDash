@@ -11,6 +11,17 @@ history remains in git.
 
 ---
 
+## [0.71.0] — Final race lap now logged (2026-07-22)
+
+Fixed a long-standing bug where the **final lap of a race was never saved**. Lap
+completion was detected when the lap counter ticked to the next lap, but at the
+chequered flag the game marks you *finished* without advancing it — so the last
+lap, the one that decides your result, was dropped. This also hid late position
+changes: a race finishing P13 would show P12 on every logged lap because the
+place was lost on that unrecorded final lap. The lap is now flushed on the
+finish, with its correct finishing position, across every screen that reads the
+session logs.
+
 ## [0.70.0] — Race-position chart by event (2026-07-22)
 
 The web companion's race chart is now a **Race position** graph drawn at

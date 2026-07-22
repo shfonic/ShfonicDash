@@ -143,6 +143,30 @@ def test_lap_row_contents(logger):
     assert lap["delta"] == ""   # no prior best yet
 
 
+def test_final_race_lap_logged_on_finish(logger):
+    # The last lap of a race is never followed by a counter tick (the game
+    # marks the driver "finished" instead), so it must be flushed on the
+    # finish frame — with that frame's final classified position.
+    _tick(logger, session_type="race", lap_number=1, lap_time=10.0)
+    _tick(logger, session_type="race", lap_number=2, lap_time=0.2,
+          last_lap=90.0, position=12)                       # lap 1 -> P12
+    _tick(logger, session_type="race", lap_number=2, lap_time=60.0,
+          position=12)
+    # Cross the line to finish: counter stays on 2, last_lap is the final
+    # time, and the classified position has dropped to P13.
+    _tick(logger, session_type="race", lap_number=2, lap_time=0.1,
+          last_lap=91.5, position=13, finish_status="finished")
+    rows = _rows(logger)
+
+    header = _rows_of_type(rows, "H")[0]
+    laps   = _rows_of_type(rows, "L")
+    assert len(laps) == 2                                   # both laps logged
+    final = dict(zip(header[1:], laps[-1][1:]))
+    assert final["lap_num"] == "2"
+    assert final["lap_time"] == "91.5"
+    assert final["position"] == "13"                        # the finish drop
+
+
 def test_lap_row_delta_is_tracked_independently_of_live_telemetry(logger):
     """The CSV delta is `lap.time - best CLEAN lap so far`, computed by the
     logger itself — not read from TelemetryData.delta/best_lap, which by
