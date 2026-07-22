@@ -389,7 +389,7 @@ class _Handler(BaseHTTPRequestHandler):
             import logging
             logging.getLogger("log_server").exception("driver save failed")
         self.send_response(303)
-        self.send_header("Location", "/app/driver")
+        self.send_header("Location", "/app/driver?saved=1")
         self.send_header("Content-Length", "0")
         self.end_headers()
 
@@ -541,7 +541,8 @@ class _Handler(BaseHTTPRequestHandler):
             elif path == "/app/settings":
                 self._send_html(200, web_app.render_settings())
             elif path == "/app/driver":
-                self._send_html(200, web_app.render_driver(logs_dir))
+                saved = (query.get("saved") or [""])[0] == "1"
+                self._send_html(200, web_app.render_driver(logs_dir, saved=saved))
             elif path.startswith("/app/img/"):
                 self._serve_app_image(path[len("/app/img/"):])
             elif path == "/app/tracks":

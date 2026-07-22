@@ -437,6 +437,13 @@ footer.foot{color:var(--text4);font-size:11px;text-align:center;margin-top:22px;
 .swatches span{display:block;width:100%;height:100%;border-radius:50%;border:1px solid rgba(0,0,0,.3)}
 .savebtn{width:100%;padding:14px;border-radius:var(--rad);border:none;background:var(--amber);
   color:var(--amber-ink);font-weight:600;font-size:14px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.savedbanner{margin:0 0 14px;padding:11px 14px;border-radius:var(--rad);
+  border:1px solid color-mix(in oklch,var(--green) 55%,transparent);
+  background:color-mix(in oklch,var(--green) 16%,transparent);color:var(--green);
+  font-size:13px;font-weight:600;letter-spacing:.03em;
+  transition:opacity .5s ease,margin .5s ease,padding .5s ease,max-height .5s ease;
+  max-height:60px;overflow:hidden}
+.savedbanner.hide{opacity:0;max-height:0;margin:0;padding:0 14px}
 /* tracks list */
 .trow{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--border);
   border-radius:var(--rad);padding:13px 15px;margin-bottom:10px}
@@ -853,9 +860,12 @@ def _avatar_preview_js() -> str:
         "render();})();</script>")
 
 
-def render_driver(logs_dir: str) -> str:
+def render_driver(logs_dir: str, saved: bool = False) -> str:
     """Editable driver identity (name, experience/discipline/goal, helmet) that
-    saves back to the Pi, plus the read-only profile stats (grade, records)."""
+    saves back to the Pi, plus the read-only profile stats (grade, records).
+
+    `saved` is set after the POST redirect (`/app/driver?saved=1`) to show a
+    confirmation banner that fades out after a few seconds."""
     from sessionlog import avatar
     from core import config_store
     from core.profile_browser import (compute_form, compute_records,
@@ -932,7 +942,15 @@ def render_driver(logs_dir: str) -> str:
         for cap, big, sub in tiles)
     records_card = (f'<div class=card><p class=label>Personal records</p>'
                     f'<div class=tiles>{tile_html}</div></div>') if tiles else ""
-    return render_shell("Driver", form_html + stats + records_card, "home")
+    # Confirmation banner after a save (auto-fades, and self-strips the ?saved=1
+    # from the URL so a reload doesn't re-show it).
+    banner = (
+        '<div id=savedbanner class=savedbanner>&#10003; Profile saved</div>'
+        "<script>(function(){var b=document.getElementById('savedbanner');"
+        "if(!b)return;if(history.replaceState)history.replaceState(null,'','/app/driver');"
+        "setTimeout(function(){b.classList.add('hide');},2600);})();</script>"
+    ) if saved else ""
+    return render_shell("Driver", banner + form_html + stats + records_card, "home")
 
 
 # ── page: session list (flat) ───────────────────────────────────────────────

@@ -11,6 +11,13 @@ history remains in git.
 
 ---
 
+## [0.73.1] — Web companion confirms profile saves (2026-07-22)
+
+Saving the driver profile in the browser companion now shows a green
+**"✓ Profile saved"** confirmation banner that fades away after a couple of
+seconds, so there's clear feedback that the change went through. Previously the
+page just reloaded silently with no acknowledgement.
+
 ## [0.73.0] — Web companion profile editor: live avatar & tidier layout (2026-07-22)
 
 The browser companion's driver-profile editor now behaves like the iOS
