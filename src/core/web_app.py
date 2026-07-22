@@ -480,6 +480,27 @@ def _css_version() -> str:
     return _CSS_VER
 
 
+# Web App Manifest for Android/Chrome "Add to Home Screen" (name + icon). The
+# browser fetches this without credentials, so `log_server` serves it (and the
+# icon it points at) outside the cookie gate — both are non-sensitive brand
+# assets. `display:standalone` gives the home-screen launch an app-like frame;
+# every page carries the top nav bar so this never traps navigation.
+APP_MANIFEST = (
+    '{\n'
+    '  "name": "Shfonic Dash Companion",\n'
+    '  "short_name": "Shfonic Dash",\n'
+    '  "start_url": "/app",\n'
+    '  "scope": "/app",\n'
+    '  "display": "standalone",\n'
+    '  "background_color": "#000000",\n'
+    '  "theme_color": "#000000",\n'
+    '  "icons": [\n'
+    '    { "src": "/app/img/app-icon.png", "sizes": "512x512", '
+    '"type": "image/png", "purpose": "any" }\n'
+    '  ]\n'
+    '}\n')
+
+
 def render_shell(title: str, body: str, active: str = "") -> str:
     def _tab(href, key, label):
         on = " on" if key == active else ""
@@ -491,9 +512,22 @@ def render_shell(title: str, body: str, active: str = "") -> str:
              f'href="/app/settings" title="Settings">&#9881;</a>')
     return (
         "<!doctype html><html lang=en><head><meta charset=utf-8>"
-        "<meta name=viewport content='width=device-width,initial-scale=1'>"
+        "<meta name=viewport content='width=device-width,initial-scale=1,"
+        "viewport-fit=cover'>"
         "<meta name=color-scheme content='dark light'>"
         f"<title>{_esc(title)} · Shfonic Dash</title>"
+        # Home-screen icon + title (Add to Home Screen). iOS reads the
+        # apple-touch-icon + apple-mobile-web-app-title; Android/Chrome read the
+        # web manifest. Both work over plain HTTP — no service worker needed.
+        "<link rel=apple-touch-icon href=/app/img/app-icon.png>"
+        "<link rel=icon type=image/png href=/app/img/app-icon.png>"
+        "<link rel=manifest href=/app/manifest.webmanifest>"
+        "<meta name=apple-mobile-web-app-title content='Shfonic Dash'>"
+        "<meta name=application-name content='Shfonic Dash'>"
+        "<meta name=apple-mobile-web-app-capable content=yes>"
+        "<meta name=mobile-web-app-capable content=yes>"
+        "<meta name=apple-mobile-web-app-status-bar-style content=black>"
+        "<meta name=theme-color content='#000000'>"
         f"{_THEME_JS}"
         f"<link rel=stylesheet href=/app/app.css?v={_css_version()}></head><body>"
         "<header class=top><div class=wrap>"

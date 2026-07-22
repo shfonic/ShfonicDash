@@ -465,6 +465,22 @@ class _Handler(BaseHTTPRequestHandler):
         path  = split.path
         query = parse_qs(split.query)
 
+        # Home-screen assets are public: the browser fetches the manifest (and the
+        # icons it names) without credentials, so they sit outside the cookie
+        # gate. Both are non-sensitive brand assets.
+        if path == "/app/manifest.webmanifest":
+            body = web_app.APP_MANIFEST.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/manifest+json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "max-age=86400")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path == "/app/img/app-icon.png":
+            self._serve_app_image("app-icon.png")
+            return
+
         # Pairing: a valid ?key= sets the cookie and redirects to the clean URL.
         key = (query.get("key") or [""])[0]
         if token and web_app.key_valid(key, token):
@@ -579,7 +595,7 @@ class _Handler(BaseHTTPRequestHandler):
     # Helmet avatar mask PNGs (shared with the Pi dashboard + companion) — the
     # web avatar composites these in-browser via CSS masks + the profile tints.
     _APP_IMAGES = {"helmet.png", "helmet_visor.png", "helmet_trim.png",
-                   "logo-dark.png", "logo-light.png"}
+                   "logo-dark.png", "logo-light.png", "app-icon.png"}
 
     def _serve_app_image(self, name: str):
         if name not in self._APP_IMAGES:

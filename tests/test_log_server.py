@@ -406,6 +406,38 @@ class TestWebCompanion:
         assert status == 200
         assert "How to earn" in body and "/app/trophies" in body
 
+    def test_manifest_is_public_valid_json(self, server):
+        # The browser fetches the manifest without credentials, so it must be
+        # reachable with no cookie and be valid JSON naming the icon.
+        import json
+        _, base = server
+        status, body, headers = self._get(f"{base}/app/manifest.webmanifest")
+        assert status == 200
+        assert "application/manifest+json" in headers.get("Content-Type", "")
+        data = json.loads(body)
+        assert data["short_name"] == "Shfonic Dash"
+        assert data["icons"][0]["src"] == "/app/img/app-icon.png"
+
+    def test_app_icon_is_public_png(self, server):
+        # The home-screen icon must serve without a cookie (manifest icon fetch
+        # is uncredentialed) and be a PNG.
+        _, base = server
+        with urllib.request.urlopen(
+                f"{base}/app/img/app-icon.png", timeout=5) as resp:
+            assert resp.status == 200
+            assert resp.headers.get("Content-Type") == "image/png"
+            assert resp.read(8).startswith(b"\x89PNG")   # PNG magic
+
+    def test_shell_advertises_home_screen_icon(self, server):
+        from core import web_app
+        _, base = server
+        cookie = f"shfonic_web={web_app.session_cookie(self.TOKEN)}"
+        status, body, _ = self._get(f"{base}/app", cookie=cookie)
+        assert status == 200
+        assert "apple-touch-icon" in body
+        assert "rel=manifest" in body
+        assert "apple-mobile-web-app-title" in body
+
     def test_off_mode_shows_disabled_page(self, server):
         from core import web_app
         ls, base = server

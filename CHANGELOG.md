@@ -11,6 +11,16 @@ history remains in git.
 
 ---
 
+## [0.72.0] — Home-screen icon for the web companion (2026-07-22)
+
+Adding the browser companion to a phone's Home Screen now installs it as a
+**named, iconed, standalone app** rather than a generic bookmark. A new app icon
+— the amber triangle **A** from the Shfonic Dash logo on brand-black — is served
+alongside a Web App Manifest and the iOS `apple-touch-icon`/title tags, so both
+iPhone ("Add to Home Screen") and Android/Chrome pick up the proper icon and
+name. It works over plain HTTP with no service worker; full offline (PWA) support
+is planned separately.
+
 ## [0.71.0] — Final race lap now logged (2026-07-22)
 
 Fixed a long-standing bug where the **final lap of a race was never saved**. Lap
