@@ -1615,7 +1615,8 @@ def render_share(logs_dir: str, filename: str) -> str:
 
 def _detail_header(summary, session, fmt, is_race, logs_dir) -> str:
     from sessionlog import circuits, records
-    title = summary["track"] or summary["game_name"] or "Session"
+    title = (circuits.display_name(session.get("game"), session.get("track"))
+             or summary["track"] or summary["game_name"] or "Session")
     loc = circuits.location(session.get("game"), session.get("track"))
     car = summary["car"]
     g = summary["grade"]

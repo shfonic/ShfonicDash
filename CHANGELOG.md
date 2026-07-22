@@ -11,6 +11,13 @@ history remains in git.
 
 ---
 
+## [0.73.2] — Web companion shows the real circuit name (2026-07-23)
+
+The browser companion's session detail header now shows the proper circuit
+name (e.g. **"Albert Park Circuit"**) instead of the raw telemetry track name
+("Melbourne"), matching the rest of the app. Unknown or non-F1 tracks still
+fall back to the raw name.
+
 ## [0.73.1] — Web companion confirms profile saves (2026-07-22)
 
 Saving the driver profile in the browser companion now shows a green
