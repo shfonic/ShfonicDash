@@ -11,6 +11,17 @@ history remains in git.
 
 ---
 
+## [0.73.0] — Web companion profile editor: live avatar & tidier layout (2026-07-22)
+
+The browser companion's driver-profile editor now behaves like the iOS
+companion. **Experience, Discipline and Goal moved below the avatar editor**, so
+the flow reads name → helmet (shell / visor / accent / pattern) → experience /
+discipline / goal, instead of splitting the identity fields around the avatar.
+And the **preview icon now updates in real time**: changing any helmet colour,
+the pattern, the avatar kind or the name re-renders the helmet immediately in
+the browser, so you can see your choice before saving rather than only after a
+save and reload.
+
 ## [0.72.1] — Web companion notes, badges & finish position (2026-07-22)
 
 The browser companion's session detail now matches the iOS companion on results

@@ -802,6 +802,57 @@ def _identity_opts(field):
     return profile.options(field)
 
 
+def _avatar_preview_js() -> str:
+    """Live avatar preview: re-render #avprev in the browser whenever a colour /
+    pattern / kind radio or the name changes, mirroring `_avatar_html` /
+    `_pattern_gradient` in JS so the icon updates in real time (no save/reload)."""
+    from sessionlog import avatar
+    import json
+    colmap = {key: f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
+              for key, _label, (r, g, b) in avatar.COLOURS}
+    return (
+        "<script>(function(){"
+        "var COL=" + json.dumps(colmap) + ";"
+        "function grad(p,a){"
+        "if(p==='stripe')return 'linear-gradient(#0000 12%,'+a+' 12% 28%,#0000 28%)';"
+        "if(p==='twin')return 'linear-gradient(#0000 10%,'+a+' 10% 18%,#0000 18% 26%,'+a+' 26% 34%,#0000 34%)';"
+        "if(p==='halo')return 'linear-gradient(#0000 2%,'+a+' 2% 13%,#0000 13%)';"
+        "return '';}"
+        "function val(n){var e=document.querySelector('input[name='+n+']:checked');return e?e.value:'';}"
+        "function layer(m,bg){return '<i style=\"position:absolute;inset:14%;background:'+bg"
+        "+';-webkit-mask:url(/app/img/'+m+') center/contain no-repeat;"
+        "mask:url(/app/img/'+m+') center/contain no-repeat\"></i>';}"
+        "function initials(s){var p=(s||'').split(/\\s+/).filter(Boolean);"
+        "if(!p.length)return '?';if(p.length===1)return p[0].slice(0,2).toUpperCase();"
+        "return (p[0][0]+p[p.length-1][0]).toUpperCase();}"
+        "function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML;}"
+        "function render(){var box=document.getElementById('avprev');if(!box)return;var px=76;"
+        "var nm=document.querySelector('input[name=name]');"
+        "var nb=document.getElementById('avprevname');"
+        "if(nb&&nm)nb.textContent=nm.value||'Driver';"
+        "if(val('avatar_kind')!=='helmet'){"
+        "box.innerHTML='<div class=av style=\"width:'+px+'px;height:'+px+'px;border-radius:50%;"
+        "flex:0 0 auto;background:#f59e1a;display:flex;align-items:center;justify-content:center\">"
+        "<span style=\"font:800 '+Math.round(px*0.42)+'px system-ui;color:#141418\">'"
+        "+esc(initials(nm?nm.value:''))+'</span></div>';return;}"
+        "var base=COL[val('helmet_base')]||COL.red,"
+        "visor=COL[val('helmet_visor')]||COL.blue,"
+        "accent=COL[val('helmet_accent')]||COL.white;"
+        "var g=grad(val('helmet_pattern'),accent);"
+        "var pat=g?('<i style=\"position:absolute;inset:14%;background:'+g"
+        "+';-webkit-mask:url(/app/img/helmet.png) center/contain no-repeat;"
+        "mask:url(/app/img/helmet.png) center/contain no-repeat\"></i>'):'';"
+        "box.innerHTML='<div class=av style=\"position:relative;width:'+px+'px;height:'+px+'px;"
+        "border-radius:50%;overflow:hidden;flex:0 0 auto;background:#ccd1e0\">'"
+        "+layer('helmet.png',base)+pat+layer('helmet_visor.png',visor)"
+        "+layer('helmet_trim.png','#ffffff')+'</div>';}"
+        "document.addEventListener('change',function(e){var n=e.target&&e.target.name;"
+        "if(n==='avatar_kind'||n==='helmet_base'||n==='helmet_visor'"
+        "||n==='helmet_accent'||n==='helmet_pattern')render();});"
+        "var nm=document.querySelector('input[name=name]');if(nm)nm.addEventListener('input',render);"
+        "render();})();</script>")
+
+
 def render_driver(logs_dir: str) -> str:
     """Editable driver identity (name, experience/discipline/goal, helmet) that
     saves back to the Pi, plus the read-only profile stats (grade, records)."""
@@ -818,7 +869,8 @@ def render_driver(logs_dir: str) -> str:
     kind = avatar.normalise_kind(profile.get("avatar_kind"))
 
     preview = (f'<div style="display:flex;align-items:center;gap:16px;margin-bottom:16px">'
-               f'{_avatar_html(profile)}<div><div style="font-size:22px;font-weight:800">'
+               f'<span id=avprev>{_avatar_html(profile)}</span>'
+               f'<div><div id=avprevname style="font-size:22px;font-weight:800">'
                f'{_esc(profile.get("name") or "Driver")}</div>'
                f'<div class=muted style="font-size:13px">Editing your driver profile</div></div></div>')
 
@@ -849,20 +901,23 @@ def render_driver(logs_dir: str) -> str:
             f'<input type=radio name={name_} value={k}{" checked" if k == current else ""}> {v}</label>'
             for k, v in options)
 
+    # Field order mirrors the Pythonista companion: identity + avatar editor
+    # first, then experience / discipline / goal underneath.
     form_html = (
         f'<form method=post action="/app/driver/save" class=card>'
         f'<p class=label>Driver</p>{preview}'
         + _text("name", profile.get("name") or "")
-        + _select("experience", profile.get("experience") or "")
-        + _select("discipline", profile.get("discipline") or "")
-        + _select("goal", profile.get("goal") or "")
         + '<p class=label style="margin-top:8px">Avatar</p>'
         + f'<div class=field>{_radios("avatar_kind", kind, avatar.VALID_KINDS and [("initials","Initials"),("helmet","Helmet")])}</div>'
         + f'<div class=field><label>Helmet shell</label>{_swatches("helmet_base", helmet["base"])}</div>'
         + f'<div class=field><label>Visor</label>{_swatches("helmet_visor", helmet["visor"])}</div>'
         + f'<div class=field><label>Accent</label>{_swatches("helmet_accent", helmet["accent"])}</div>'
         + f'<div class=field><label>Pattern</label>{_radios("helmet_pattern", helmet["pattern"], avatar.PATTERNS)}</div>'
-        + '<button class=savebtn type=submit>Save profile</button></form>')
+        + _select("experience", profile.get("experience") or "")
+        + _select("discipline", profile.get("discipline") or "")
+        + _select("goal", profile.get("goal") or "")
+        + '<button class=savebtn type=submit>Save profile</button></form>'
+        + _avatar_preview_js())
 
     # read-only stats below the editor
     ov = (f'<div class="lg {_grade_class(form["letter"])}">{_esc(form["letter"])}</div>'
