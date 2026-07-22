@@ -1800,21 +1800,33 @@ def _chart_card(session, summary, is_race, logs_dir) -> str:
 
 def _position_chart(session) -> str:
     laps = [l for l in (session.get("laps") or []) if l.get("position")]
-    if len(laps) < 2:
+    # Bookend the per-lap positions with the grid start (before lap 1) and the
+    # classified finish, so the chart tells the same P{start} → P{finish} story
+    # as the header. Per-lap POS only records the position at each lap tickover,
+    # so without the grid slot it never shows the opening-lap climb.
+    start, finish = _race_positions(session)
+    nums = [l["num"] for l in laps]
+    x0 = (min(nums) if nums else 1)
+    x1 = (max(nums) if nums else 1)
+    nodes = []  # (x-axis coord, position)
+    if start:
+        x0 -= 1
+        nodes.append((x0, start))
+    nodes.extend((l["num"], l["position"]) for l in laps)
+    if finish and (not laps or finish != laps[-1]["position"]):
+        x1 += 1
+        nodes.append((x1, finish))
+    if len(nodes) < 2:
         return ""
     W, H, pad = 680, 170, 26
-    nums = [l["num"] for l in laps]
-    poss = [l["position"] for l in laps]
+    poss = [p for _, p in nodes]
     pmin, pmax = min(poss), max(poss)
     if pmin == pmax:
         pmax = pmin + 1
-    x0, x1 = min(nums), max(nums)
     def x(n): return pad + (n - x0) / max(1, x1 - x0) * (W - 2 * pad)
     def y(p): return pad + (p - pmin) / (pmax - pmin) * (H - 2 * pad)
     # Step line.
-    pts = []
-    for i, l in enumerate(laps):
-        pts.append((x(l["num"]), y(l["position"])))
+    pts = [(x(n), y(p)) for n, p in nodes]
     d = f'M {pts[0][0]:.1f} {pts[0][1]:.1f}'
     for i in range(1, len(pts)):
         d += f' L {pts[i][0]:.1f} {pts[i-1][1]:.1f} L {pts[i][0]:.1f} {pts[i][1]:.1f}'

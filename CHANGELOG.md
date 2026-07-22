@@ -11,6 +11,14 @@ history remains in git.
 
 ---
 
+## [0.69.1] — Position-by-lap chart fix (2026-07-22)
+
+The web companion's race **Position by lap** chart now starts from your grid
+slot and ends on the classified finish, so it tells the same story as the
+header (e.g. P19 → P13). Previously it plotted only the position recorded at
+each lap tickover, so a race where you climbed on the opening lap and then held
+station drew a misleading flat line.
+
 ## [0.69.0] — Companion settings tab (2026-07-22)
 
 Grouped all connectivity settings onto a dedicated **COMPANION** tab in Settings
