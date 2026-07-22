@@ -300,6 +300,13 @@ table.laps tr.inv td:first-child{box-shadow:inset 3px 0 0 var(--red)}
   font-size:11px;color:var(--text3)}
 .note{margin:0 0 15px}
 .notep{margin:0;color:var(--text2);font-size:13px;line-height:1.6}
+.awards{list-style:none;margin:0 0 15px;padding:0}
+.awards li{display:flex;align-items:center;gap:9px;padding:5px 0;
+  font-size:14px;color:var(--text)}
+.awards .ai{font-size:18px;line-height:1;width:22px;text-align:center;flex:none}
+.awards .an{color:var(--text2)}
+.awards .anew{color:var(--amber);font-weight:600}
+.awards .ax{color:var(--text3);font-size:12px}
 .thumbs{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
 .thumb{width:104px}
 .cthumb{width:104px;height:70px;display:block;background:var(--panel2);
@@ -1571,14 +1578,26 @@ def _detail_header(summary, session, fmt, is_race, logs_dir) -> str:
         grade_bits.append(f'TREND {tw}')
     grade_line = f'<div class=muted>{"   ·   ".join(grade_bits)}</div>' if grade_bits else ""
 
+    # Finish position — shown for the classified session types (races and
+    # qualifying), never for hotlap/practice where there is no field result.
+    # ACC imports carry standings but no grid, so the position-change line
+    # ("P3 → P1") can't be built; the plain finish "P1 of 18" always can and is
+    # what the companion shows, so it leads.
     pos_line = ""
-    if is_race:
+    stype = (session.get("session_type") or "").strip().lower()
+    classified = is_race or stype == "qualifying"
+    if classified:
         start, finish = _race_positions(session)
+        field = len(session.get("standings") or [])
+        if finish:
+            of = f" of {field}" if field else ""
+            verb = "Finished" if is_race else "Qualified"
+            pos_line = f'<div class=facts>{verb} P{finish}{of}</div>'
         if start and finish:
             delta = start - finish
             arr = (f'<span class=up>▲ +{delta}</span>' if delta > 0
                    else f'<span class=down>▼ {delta}</span>' if delta < 0 else "held")
-            pos_line = f'<div class=facts>P{start} → P{finish}   {arr}</div>'
+            pos_line += f'<div class=facts>P{start} → P{finish}   {arr}</div>'
 
     overall = ""
     if summary.get("overall_best") is not None:
@@ -1703,27 +1722,100 @@ _KIND_HEX = {"info": "#2fe07a", "track_limit": "#ffb300", "contact": "#ff8a2b",
 
 
 def _notes_block(summary) -> str:
-    """Race Engineer Notes — plain paragraphs (no `//`, no dividers), each
-    located note followed by a row of corner mini-map thumbnails, exactly like
-    the Pi history browser and the companion. Uses `notes_detailed`
-    (`{text, locations:[{label, distance, kind, rewound}]}`) + the session's
-    `track_map`, drawing each crop via `trackmap.crop_geometry` in SVG."""
+    """Race Engineer Notes — composed exactly like the companion's detail view,
+    not just the `notes_detailed` list. The engine notes (`sessionlog.pace`)
+    are the located, evidence-only lines; the *consumer* prepends the career
+    badges this session earned and the grade explanation (see the sessionlog.pace
+    docstring — "consumers compose the notes with grading output themselves").
+    A clean, incident-free race produces no engine notes, so composing only
+    `notes_detailed` left the whole section empty on the web while the companion
+    showed badges + the grade summary.
+
+    Order (companion parity): earned badges → grade summary paragraph
+    ("Session grade A (95/100) — Execution A, Race Discipline A+. …") → focus
+    for next session → each located engine note with its corner thumbnails."""
+    parts = []
+
+    parts.append(_award_lines(summary.get("awards")))
+    parts.append(_grade_paragraph(summary.get("grade")))
+
     detailed = summary.get("notes_detailed")
     if not detailed:
         detailed = [{"text": t, "locations": []} for t in (summary.get("notes") or [])]
-    if not detailed:
-        return ""
     track_map = summary.get("track_map")
-    items = []
-    for note in detailed:
+    for note in detailed or []:
         text = note.get("text") if isinstance(note, dict) else str(note)
         if not text:
             continue
         thumbs = _note_thumbs(note.get("locations") or [], track_map)
-        items.append(f'<div class=note><p class=notep>{_esc(text)}</p>{thumbs}</div>')
-    if not items:
+        parts.append(f'<div class=note><p class=notep>{_esc(text)}</p>{thumbs}</div>')
+
+    body = "".join(p for p in parts if p)
+    if not body:
         return ""
-    return (f'<div class=sec><p class=label>Race engineer notes</p>{"".join(items)}</div>')
+    return f'<div class=sec><p class=label>Race engineer notes</p>{body}</div>'
+
+
+def _award_lines(awards) -> str:
+    """The career badges this session earned, as the companion lists them:
+    an emoji medal + "New badge — <name>" for a first unlock, "<name> ×N" for a
+    repeat/upgrade. Icons come from `achievements.badge()` (the same source the
+    trophy gallery uses); empty when nothing was earned."""
+    if not awards:
+        return ""
+    from sessionlog import achievements
+    rows = []
+    for a in awards:
+        try:
+            icon = (achievements.badge(a.get("id")) or {}).get("icon") or "🏅"
+        except Exception:
+            icon = "🏅"
+        name = a.get("name") or ""
+        if a.get("kind") == "unlocked":
+            label = (f'<span class=anew>New badge</span>'
+                     f'<span class=an> — {_esc(name)}</span>')
+        elif a.get("kind") == "upgraded":
+            tier = (a.get("tier") or "").upper()
+            label = (f'<span class=an>{_esc(name)}</span>'
+                     f'<span class=ax> ×{a.get("count", 1)}'
+                     + (f' — {_esc(tier)}' if tier else "") + '</span>')
+        else:
+            label = (f'<span class=an>{_esc(name)}</span>'
+                     f'<span class=ax> ×{a.get("count", 1)}</span>')
+        rows.append(f'<li><span class=ai>{_esc(icon)}</span>{label}</li>')
+    return f'<ul class=awards>{"".join(rows)}</ul>' if rows else ""
+
+
+def _grade_paragraph(grade) -> str:
+    """The grade summary the companion shows under the notes: a headline
+    ("Session grade A (95/100) — Execution A, Race Discipline A+.") built from
+    the grade split, then the evidence explanation, then the "Focus for next
+    session" line. All values come from the shared `sessionlog.grading` dict —
+    the header grade chip and this paragraph therefore always agree."""
+    if not grade:
+        return ""
+    out = []
+    letter = grade.get("letter")
+    score = grade.get("score")
+    if letter and score is not None:
+        head = f"Session grade {letter} ({int(round(score))}/100)"
+        ex = grade.get("execution") or {}
+        cl = grade.get("cleanliness") or {}
+        bits = []
+        if ex.get("letter"):
+            bits.append(f"Execution {ex['letter']}")
+        if cl.get("letter"):
+            bits.append(f"{cl.get('label') or 'Cleanliness'} {cl['letter']}")
+        if bits:
+            head += " — " + ", ".join(bits)
+        expl = grade.get("explanation")
+        text = head + "." + (f" {expl}" if expl else "")
+        out.append(f'<div class=note><p class=notep>{_esc(text)}</p></div>')
+    focus = grade.get("focus")
+    if focus:
+        out.append('<div class=note><p class=notep>'
+                   f'Focus for next session: {_esc(focus)}</p></div>')
+    return "".join(out)
 
 
 def _note_thumbs(locations, track_map) -> str:

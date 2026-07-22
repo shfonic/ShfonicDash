@@ -11,6 +11,19 @@ history remains in git.
 
 ---
 
+## [0.72.1] — Web companion notes, badges & finish position (2026-07-22)
+
+The browser companion's session detail now matches the iOS companion on results
+pages. A clean, incident-free race previously showed no Race Engineer Notes at
+all — the located coaching notes are naturally empty when there's nothing to
+flag, so a flawless race came up blank. The page now composes the section the
+way the phone does: the **career badges** the session earned, the **grade
+summary** ("Session grade A (95/100) — Execution A, Race Discipline A+. …") and
+the focus-for-next-session line, then any located notes. The detail header also
+gained a **finish position** ("Finished P1 of 18" for races, "Qualified P… of …"
+for qualifying), so results show even for imported sessions without grid data;
+hotlap and practice sessions get no finish line.
+
 ## [0.72.0] — Home-screen icon for the web companion (2026-07-22)
 
 Adding the browser companion to a phone's Home Screen now installs it as a
